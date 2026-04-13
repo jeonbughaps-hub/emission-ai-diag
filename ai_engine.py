@@ -78,13 +78,15 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for page in doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                all_images.append(Image.open(io.BytesIO(pix.tobytes("png"))))
+                # ★ 핵심 수정: 해상도를 낮추고 용량이 1/10 수준인 JPEG로 변환하여 메모리 폭발 차단
+                pix = page.get_pixmap(matrix=fitz.Matrix(1, 1))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg")))
+                if img.mode != 'RGB': img = img.convert('RGB')
+                all_images.append(img)
             fbytes.seek(0)
         except Exception: continue
     return all_images
 
-# ★ 핵심 수정 1: 어떤 데이터가 들어와도 무조건 강제로 텍스트로 변환하여 에러 원천 차단
 def force_extract_json(text) -> dict:
     if text is None: return {}
     text = str(text) 
@@ -122,7 +124,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 1. 중복 추출 절대 금지.
 2. 시각적 오인식 방지: 표의 테두리 선을 숫자 '1'로 착각하지 마십시오 (예: 10.19를 110.19로 오인식 절대 금지).
 3. 관리담당자: 선임되어 있으면 무조건 적합(A).
-4. 대기오염방지시설(THC): 'prevention' 배열에 추출. (농도가 {limit_text} 이하이면 '적합')
+4. 대기오염방지시설(THC): 'prevention' 배열에 추출. (일반적인 분류명 대신 AC-01 같은 구체적인 시설명칭을 기재할 것. 농도가 {limit_text} 이하이면 '적합')
 5. 공정배출시설(냉각탑, 열교환기 등): 'process_emission' 배열에 별도로 추출.
    - 냉각탑(TOC): 50ppm 이하 '적합'
    - 열교환기: 개별 농도를 적지 말고, 전단과 후단의 '농도 편차'만을 계산하여 1ppm 이내이면 '적합'
@@ -170,7 +172,6 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
         
-        # ★ 핵심 수정 2: 응답 데이터를 안전하게 문자열로 뽑아내고, 실패해도 앱이 뻗지 않도록 보호
         try:
             raw_text = str(response.text)
         except Exception as e:
