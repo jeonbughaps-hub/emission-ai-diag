@@ -12,6 +12,7 @@ import streamlit as st
 from datetime import datetime
 import warnings
 
+# ★ 로그에 뜨는 FutureWarning을 강제로 숨깁니다.
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -33,11 +34,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 데이터 및 법령 통합 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 지식베이스 통합 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("분석 용량 초과입니다. 페이지를 줄여 시도해주세요.")
+    raise Exception("서버 부하가 높습니다. 잠시 후 다시 시도해 주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -72,12 +73,9 @@ def convert_and_mask_images(pdf_list):
     for _, fbytes in pdf_list:
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            page_count = len(doc)
-            # 수치 인식을 위해 2.0 고화질 고정
-            zoom = 2.0
-            for i in range(page_count):
-                page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            # ★ 수치 인식을 위해 2.0 고화질 유지
+            for page in doc:
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
@@ -107,40 +105,41 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     rag_context = ""
     if vector_db:
         try:
-            docs = vector_db.similarity_search(f"{user_industry} 비산배출 시설관리기준 핵심", k=3)
+            # ★ 지식베이스 검색 강도 조절 (메모리 보호)
+            docs = vector_db.similarity_search(f"{user_industry} 관리기준", k=2)
             rag_context = "\n".join([d.page_content for d in docs])
         except: pass
 
-    # ★ 핵심 수정: 데이터 추출 가이드를 매우 직관적으로 단순화
+    # ★ 프롬프트: 데이터 추출 임무를 가장 위로 배치하여 강조
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (진단시각: {current_time})
+당신은 한국환경공단 전문 진단 AI입니다. (시점: {current_time})
 업종: {user_industry} | THC 기준: {limit_text}
 
-[절대 우선순위 임무]
-1. 이미지 내의 모든 표를 저인망식으로 스캔하여 '2021~2023' 모든 연도의 실측 데이터를 추출하세요.
-2. '제출인' 또는 '대표자' 이름을 'manager' 데이터에 반드시 넣으세요.
-3. 데이터가 존재함에도 빈 칸[]으로 응답하는 것은 심각한 오류입니다. 무조건 수치를 찾아 채우세요.
+[제1임무: 운영기록부 데이터 전수 추출]
+- 이미지 내의 모든 표를 확인하여 2021, 2022, 2023년 등 발견되는 모든 연도의 데이터를 추출하세요.
+- 대표자 성명을 manager 항목에, 모든 방지시설 측정값을 prevention 항목에 넣으세요.
+- 데이터가 있는데 빈 배열[]로 보내는 것은 오답입니다.
 
-[법규 지침 참고]
+[제2임무: 법규 지침 대조 분석]
+- 아래 제공된 법규 지침과 사업장의 실측 데이터를 비교 분석하세요.
 {rag_context[:800]}
 
-[JSON 형식 엄수]
+[JSON 구조]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
-  "manager": {{ "data": [ {{"period": "연도", "name": "이름", "date": "날짜"}} ] }},
-  "prevention": {{ "data": [ {{"period": "연도/반기", "facility": "시설명", "value": "농도", "result": "적합"}} ] }},
+  "manager": {{ "data": [] }},
+  "prevention": {{ "data": [] }},
   "process_emission": {{ "data": [] }},
-  "ldar": {{ "data": [ {{"year": "연도", "leak_count": "0", "result": "적합"}} ] }},
+  "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "법령과 실측 데이터를 연계한 1500자 이상의 정밀 분석 (\\n 사용)"
+  "overall_opinion": "법령 근거를 포함한 1500자 이상의 정밀 분석 보고서 (\\n 사용)"
 }}
 """
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
-        # 데이터 구조 보정 (리스트 방지)
         for key in ["manager", "prevention", "process_emission", "ldar"]:
             if key in parsed_data and isinstance(parsed_data[key], list):
                 parsed_data[key] = {"data": parsed_data[key]}
