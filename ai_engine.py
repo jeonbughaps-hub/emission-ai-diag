@@ -9,10 +9,13 @@ import time
 import random
 import zipfile
 import streamlit as st
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+# ★ 무거운 Chroma와 HuggingFace 대신 가벼운 FAISS와 구글 엔진 사용
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
 from utils import get_limit_ppm
 
 def get_model(): 
@@ -62,9 +65,12 @@ def build_vector_db(uploaded_files):
     try:
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=t) for t in splitter.split_text(all_texts)]
-        emb  = HuggingFaceEmbeddings(model_name="jhgan/ko-sroberta-multitask", model_kwargs={"device": "cpu"})
-        return Chroma.from_documents(docs, emb)
-    except Exception: return None
+        # ★ 구글 임베딩 엔진 적용 (초경량/초고속)
+        emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        return FAISS.from_documents(docs, emb)
+    except Exception as e: 
+        print(f"지식베이스 구축 에러: {e}")
+        return None
 
 def convert_and_mask_images(pdf_list):
     all_images = []
@@ -100,7 +106,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             rag_text = "\n".join(d.page_content for d in docs)
         except Exception: pass
 
-    # ★ 다개년 누적, 열교환기 편차, LDAR 오류방지 등 프롬프트
     prompt = f"""
 당신은 환경부 비산배출시설 전문 진단 AI입니다.
 업종 분류: {user_industry}  |  방지시설 THC 배출허용기준: {limit_text}
@@ -176,18 +181,15 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
-        # ★ 파이썬 레벨 2중 안전장치 (LDAR 할루시네이션 완벽 방어)
         if "ldar" in parsed_data and "data" in parsed_data["ldar"]:
             for item in parsed_data["ldar"]["data"]:
                 leak_val = str(item.get("leak_count", "0")).strip()
-                # 숫자가 아니거나 0이거나 내용이 없으면 강제 정상 처리
                 if not leak_val.isdigit() or leak_val == "0" or leak_val == "":
                     item["leak_count"] = "0"
                     item["leak_rate"] = "0%"
                     item["result"] = "적합"
                     item["recheck_done"] = "해당없음"
 
-        # LDAR 점수 파이썬 강제 100점 보정
         if "scores" in parsed_data and "ldar_score" in parsed_data["scores"]:
             all_zero = all(str(item.get("leak_count", "0")) == "0" for item in parsed_data.get("ldar", {}).get("data", []))
             if all_zero:
