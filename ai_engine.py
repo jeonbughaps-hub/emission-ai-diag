@@ -30,7 +30,7 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 구글 서버 대기 중... {int(wait)}초 후 재시도 ({attempt+1}/{retries})")
+                st.toast(f"⏳ 대용량 처리/서버 대기 중... {int(wait)}초 후 재시도 ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
@@ -81,12 +81,20 @@ def convert_and_mask_images(pdf_list):
     for _, fbytes in pdf_list:
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            for page in doc:
-                # ★ 시력 회복: 화질을 2배수(Matrix 2, 2)로 높여 작은 글씨도 완벽히 읽게 만듦
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+            page_count = len(doc)
+            
+            # ★ 모든 페이지(page_count)를 스캔합니다.
+            for i in range(page_count):
+                page = doc[i]
+                
+                # ★ 지능형 메모리 방어막: 전체가 10장 이하일 땐 2배수(고화질), 그 이상이면 1배수(일반화질)로 자동 조절
+                zoom = 2 if page_count <= 10 else 1 
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
+                
             fbytes.seek(0)
         except Exception: continue
     return all_images
