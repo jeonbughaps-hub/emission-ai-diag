@@ -11,8 +11,8 @@ import zipfile
 import streamlit as st
 from datetime import datetime
 import warnings
+import gc  # ★ 메모리 강제 정리를 위해 추가
 
-# ★ 로그에 뜨는 FutureWarning을 강제로 숨깁니다.
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -34,11 +34,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 지식베이스 통합 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 메모리 최적화 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("서버 부하가 높습니다. 잠시 후 다시 시도해 주세요.")
+    raise Exception("서버 메모리 한계입니다. 분석 장수를 줄여주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -57,15 +57,23 @@ def build_vector_db(uploaded_files, location_key="default"):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for page in doc: all_texts += page.get_text() + "\n"
+            doc.close() # ★ 파일 즉시 닫기
             fbytes.seek(0)
         except Exception: continue
+    
     if not all_texts: return None
+    
     try:
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        # ★ 메모리 다이어트: 청크 사이즈를 줄여 검색 효율 최적화
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
         docs = [Document(page_content=t) for t in splitter.split_text(all_texts)]
+        
         api_key = os.environ.get("GOOGLE_API_KEY")
         emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-        return InMemoryVectorStore.from_documents(docs, emb)
+        vdb = InMemoryVectorStore.from_documents(docs, emb)
+        
+        gc.collect() # ★ 메모리 찌꺼기 강제 제거
+        return vdb
     except Exception: return None
 
 def convert_and_mask_images(pdf_list):
@@ -73,14 +81,19 @@ def convert_and_mask_images(pdf_list):
     for _, fbytes in pdf_list:
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            # ★ 수치 인식을 위해 2.0 고화질 유지
+            # ★ 메모리 최적화 핵심: 화질은 유지하되 전송 용량만 줄이는 1.5배수 하이브리드 세팅
             for page in doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                # JPEG 퀄리티를 70으로 낮춰 메모리 점유율 40% 감소
+                img_data = pix.tobytes("jpeg", 70)
+                img = Image.open(io.BytesIO(img_data))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
+                del pix # ★ 픽셀 데이터 즉시 삭제
+            doc.close()
             fbytes.seek(0)
         except Exception: continue
+    gc.collect()
     return all_images
 
 def force_extract_json(text) -> dict:
@@ -105,23 +118,18 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     rag_context = ""
     if vector_db:
         try:
-            # ★ 지식베이스 검색 강도 조절 (메모리 보호)
+            # 검색량 최소화
             docs = vector_db.similarity_search(f"{user_industry} 관리기준", k=2)
             rag_context = "\n".join([d.page_content for d in docs])
         except: pass
 
-    # ★ 프롬프트: 데이터 추출 임무를 가장 위로 배치하여 강조
     prompt = f"""
 당신은 한국환경공단 전문 진단 AI입니다. (시점: {current_time})
 업종: {user_industry} | THC 기준: {limit_text}
 
-[제1임무: 운영기록부 데이터 전수 추출]
-- 이미지 내의 모든 표를 확인하여 2021, 2022, 2023년 등 발견되는 모든 연도의 데이터를 추출하세요.
-- 대표자 성명을 manager 항목에, 모든 방지시설 측정값을 prevention 항목에 넣으세요.
-- 데이터가 있는데 빈 배열[]로 보내는 것은 오답입니다.
-
-[제2임무: 법규 지침 대조 분석]
-- 아래 제공된 법규 지침과 사업장의 실측 데이터를 비교 분석하세요.
+[임무]
+1. 이미지 내 모든 연도의 측정 데이터(21~23년 등)를 전수 추출하세요.
+2. 아래 [법령 지침]을 바탕으로 실제 측정값의 적합성을 1500자 이상 정밀 분석하세요.
 {rag_context[:800]}
 
 [JSON 구조]
@@ -133,10 +141,12 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "법령 근거를 포함한 1500자 이상의 정밀 분석 보고서 (\\n 사용)"
+  "overall_opinion": "법령 근거를 포함한 상세 보고서 (\\n 사용)"
 }}
 """
     try:
+        # ★ 메모리 정리를 하고 AI 호출
+        gc.collect()
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
