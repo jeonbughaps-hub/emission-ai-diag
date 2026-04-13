@@ -20,13 +20,13 @@ from utils import get_limit_ppm
 def get_model(): 
     return genai.GenerativeModel("gemini-2.0-flash")
 
-def generate_with_retry(model, content_list, retries=10, delay=3):
+def generate_with_retry(model, content_list, retries=5, delay=3):
     for attempt in range(retries):
         try: return model.generate_content(content_list)
         except Exception as e:
-            if "429" in str(e) or "Resource exhausted" in str(e):
+            if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ API 대기 중... {int(wait)}초 후 재시도 ({attempt+1}/{retries})")
+                st.toast(f"⏳ 구글 서버 혼잡... {int(wait)}초 후 재시도 ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
@@ -45,7 +45,7 @@ def extract_pdfs_from_source(uploaded_files):
                         if fname.lower().endswith(".pdf") and not fname.startswith("__"):
                             with z.open(fname) as f: 
                                 pdf_list.append((fname, io.BytesIO(f.read())))
-            except Exception as e: st.error(f"ZIP 압축 해제 오류: {str(e)}")
+            except Exception as e: st.error(f"ZIP 해제 오류: {str(e)}")
         elif uf.name.lower().endswith(".pdf"):
             pdf_list.append((uf.name, uf))
     return pdf_list
@@ -69,7 +69,7 @@ def build_vector_db(uploaded_files):
         emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
         return InMemoryVectorStore.from_documents(docs, emb)
     except Exception as e: 
-        print(f"지식베이스 구축 에러: {e}")
+        print(f"지식베이스 에러: {e}")
         return None
 
 def convert_and_mask_images(pdf_list):
@@ -84,7 +84,10 @@ def convert_and_mask_images(pdf_list):
         except Exception: continue
     return all_images
 
-def force_extract_json(text: str) -> dict:
+# ★ 핵심 수정 1: 어떤 데이터가 들어와도 무조건 강제로 텍스트로 변환하여 에러 원천 차단
+def force_extract_json(text) -> dict:
+    if text is None: return {}
+    text = str(text) 
     try: return json.loads(text.replace("```json", "").replace("```", "").strip())
     except Exception: pass
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -94,7 +97,8 @@ def force_extract_json(text: str) -> dict:
     return {}
 
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
-    if not os.environ.get("GOOGLE_API_KEY") or not measure_images: return {"parsed": {}, "raw": "API 키 또는 이미지 없음"}
+    if not os.environ.get("GOOGLE_API_KEY") or not measure_images: 
+        return {"parsed": {}, "raw": "API 키 또는 이미지 없음"}
 
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
@@ -112,18 +116,17 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 [법령 지식베이스 참고 발췌]: {rag_text[:800]}
 
 ==========================================================
-[임무 1 - 업로드된 모든 연도 데이터 전수 추출 및 오류 방지] ★ 가장 중요!
+[임무 1 - 업로드된 모든 연도 데이터 전수 추출 및 오류 방지]
 ==========================================================
-제공된 모든 문서 이미지를 끝까지 스캔하여, 2022년, 2023년, 2024년 등 문서에 존재하는 '모든 연도'의 측정 데이터를 누락 없이 전부 JSON 배열에 누적(Merge)하여 추출하십시오.
-1. 중복 추출 절대 금지: 동일 데이터를 2번 이상 추출하지 마십시오.
+제공된 모든 문서 이미지를 끝까지 스캔하여, 2022년, 2023년, 2024년 등 문서에 존재하는 '모든 연도'의 측정 데이터를 누락 없이 전부 JSON 배열에 누적하여 추출하십시오.
+1. 중복 추출 절대 금지.
 2. 시각적 오인식 방지: 표의 테두리 선을 숫자 '1'로 착각하지 마십시오 (예: 10.19를 110.19로 오인식 절대 금지).
 3. 관리담당자: 선임되어 있으면 무조건 적합(A).
 4. 대기오염방지시설(THC): 'prevention' 배열에 추출. (농도가 {limit_text} 이하이면 '적합')
 5. 공정배출시설(냉각탑, 열교환기 등): 'process_emission' 배열에 별도로 추출.
-   - 냉각탑(TOC): 50ppm 이하 '적합' (limit: "50ppm")
-   - 열교환기: 개별 농도를 적지 말고, 전단(원수)과 후단(냉각수)의 '농도 편차(차이값)'만을 계산하여 1ppm 이내이면 '적합' (limit: "편차 1ppm 이내")
-6. 비산누출시설(LDAR): 'target_count'에 대상 개소를 정확한 숫자로 합산 기재.
-   ★ 누출 초과 건수가 '0'이거나, 30일 이내에 조치완료되었거나, '미실시'인 경우 무조건 누출건수(leak_count)를 '0'으로 처리하고 판정(result)을 '적합'으로 하십시오.
+   - 냉각탑(TOC): 50ppm 이하 '적합'
+   - 열교환기: 개별 농도를 적지 말고, 전단과 후단의 '농도 편차'만을 계산하여 1ppm 이내이면 '적합'
+6. 비산누출시설(LDAR): 누출 초과 건수가 '0'이거나, 30일 이내에 조치완료되었거나, '미실시'인 경우 무조건 누출건수를 '0'으로 처리하고 판정을 '적합'으로 하십시오.
 
 ==========================================================
 [임무 2 - 준수율 종합 점수 산정]
@@ -145,41 +148,35 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
 【5. 중장기 개선 로드맵 및 정책 제언】
 
 ==========================================================
-[최종 JSON 구조] (예시일 뿐, YYYY를 실제 연도로 바꾸어 다개년 데이터를 배열에 넣으세요)
+[최종 JSON 구조] 
 ==========================================================
 {{
   "scores": {{
     "manager_score":    {{"score": 100, "grade": "A", "reason": "정상 선임 완료"}},
     "prevention_score": {{"score": 100, "grade": "A", "reason": "모든 시설 기준 충족"}},
     "ldar_score":       {{"score": 100, "grade": "A", "reason": "누출 미발생 또는 조치 완료"}},
-    "record_score":     {{"score": 90, "grade": "A", "reason": "..."}},
+    "record_score":     {{"score": 90, "grade": "A", "reason": "기록 양호"}},
     "overall_score":    {{"score": 97, "grade": "A"}}
   }},
-  "manager": {{ "data": [ {{"period": "YYYY년", "name": "...", "date": "...", "dept": "...", "qualification": "..."}} ] }},
-  "prevention": {{
-    "data": [
-      {{"period": "YYYY년 상반기", "date": "...", "facility": "흡착에의한시설", "value": "10.19", "limit": "{limit_text}", "accuracy_check": "양호", "result": "적합", "remark": "THC"}}
-    ]
-  }},
-  "process_emission": {{
-    "data": [
-      {{"period": "YYYY년 하반기", "date": "...", "facility": "냉각탑", "value": "0.7", "limit": "50ppm", "accuracy_check": "양호", "result": "적합", "remark": "TOC"}},
-      {{"period": "YYYY년 하반기", "date": "...", "facility": "열교환기", "value": "0.3", "limit": "편차 1ppm 이내", "accuracy_check": "양호", "result": "적합", "remark": "TOC 편차"}}
-    ]
-  }},
-  "ldar": {{
-    "data": [
-      {{"year": "YYYY", "target_count": "202", "leak_count": "0", "leak_rate": "0%", "recheck_done": "해당없음", "result": "적합"}}
-    ]
-  }},
-  "risk_matrix": [ {{"item": "...", "probability": "낮음", "impact": "높음", "priority": "High"}} ],
-  "improvement_roadmap": [ {{"phase": "단기(~6개월)", "action": "...", "expected_effect": "..."}} ],
-  "overall_opinion": "【1. 진단 배경 및 법적 근거】\\n..."
+  "manager": {{ "data": [] }},
+  "prevention": {{ "data": [] }},
+  "process_emission": {{ "data": [] }},
+  "ldar": {{ "data": [] }},
+  "risk_matrix": [],
+  "improvement_roadmap": [],
+  "overall_opinion": "..."
 }}
 """
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
-        parsed_data = force_extract_json(response.text)
+        
+        # ★ 핵심 수정 2: 응답 데이터를 안전하게 문자열로 뽑아내고, 실패해도 앱이 뻗지 않도록 보호
+        try:
+            raw_text = str(response.text)
+        except Exception as e:
+            raw_text = f"{{}} (텍스트 추출 에러: {str(e)} / 보안 필터에 의해 차단되었을 수 있습니다.)"
+            
+        parsed_data = force_extract_json(raw_text)
         
         if "ldar" in parsed_data and "data" in parsed_data["ldar"]:
             for item in parsed_data["ldar"]["data"]:
@@ -215,6 +212,6 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
                     parsed_data["scores"]["overall_score"]["grade"] = grade
                 except Exception: pass
 
-        return {"parsed": parsed_data, "raw": response.text}
+        return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
-        return {"parsed": {}, "raw": f"AI 분석 중 오류: {str(e)}"}
+        return {"parsed": {}, "raw": f"AI 분석 중 오류 발생: {str(e)}"}
