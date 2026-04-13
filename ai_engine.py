@@ -30,11 +30,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 실시간 데이터 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("API 응답 지연입니다. 잠시 후 다시 시도해 주세요.")
+    raise Exception("API 호출 오류가 발생했습니다.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -45,9 +45,9 @@ def extract_pdfs_from_source(uploaded_files):
             pdf_list.append((uf.name, uf))
     return pdf_list
 
-# ★ 핵심 해결책 1: 캐시 키에 '주소'와 '분 단위 시간'을 포함시켜 데이터 고정 현상을 원천 차단
+# ★ 해결 1: 주소(location)를 캐시 키에 포함하여 주소 변경 시 즉시 갱신되도록 복구
 @st.cache_resource(show_spinner=False)
-def build_vector_db(uploaded_files, location_key="default", refresh_token=""):
+def build_vector_db(uploaded_files, location_key="default"):
     if not uploaded_files: return None
     all_texts = ""
     for _, fbytes in extract_pdfs_from_source(uploaded_files):
@@ -71,12 +71,11 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # 고화질 분석을 유지하면서 메모리 효율 최적화
-            zoom = 2.0 if page_count <= 10 else 1.5
+            # 가장 인식이 잘 되던 고화질(2.0배수)로 고정
             for i in range(page_count):
                 page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 90)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
             fbytes.seek(0)
@@ -100,21 +99,21 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
-    
-    # ★ 핵심 해결책 2: AI에게 '지금 이 시각'을 강력하게 인지시켜 과거 데이터 재사용 금지
-    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # ★ 해결 2: 현재 시간 주입으로 공공데이터 시간 고정 문제 해결
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # 프롬프트를 가장 잘 나오던 시절의 직관적인 구조로 복구
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (현재 분석 시각: {current_time_str})
-업종: {user_industry} | THC 배출기준: {limit_text}
+당신은 한국환경공단 전문 진단 AI입니다. (시점: {current_time})
+업종: {user_industry} | THC 기준: {limit_text}
 
-[데이터 추출 지침]
-1. 모든 페이지를 전수 조사하여 2021, 2022, 2023 등 발견되는 모든 연도의 데이터를 연도별로 정리하세요.
-2. 제출인(대표자) 성명은 manager 항목에 추출하세요.
-3. 방지시설 THC 측정값은 prevention 배열에 연도순으로 통합하세요.
-4. LDAR 점검 기록은 ldar 배열에 연도별로 정리하세요. 데이터가 없으면 '0'으로 표기하세요.
+[임무]
+1. 문서 내 모든 연도('21, '22, '23 등)의 데이터를 전수 조사하여 추출하세요.
+2. '제출인(대표자)' 이름을 manager 항목에 넣으세요.
+3. 모든 방지시설 측정 수치는 'prevention' 배열에 통합하여 연도순으로 정렬하세요.
+4. LDAR 기록을 'ldar' 배열에 연도별로 정리하세요.
 
-[JSON 구조]
+[응답 JSON 구조]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
   "manager": {{ "data": [] }},
@@ -123,7 +122,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "문서 데이터를 기반으로 1500자 이상의 상세 보고서를 작성하세요. (줄바꿈은 \\n 사용)"
+  "overall_opinion": "문서 데이터를 기반으로 1500자 이상의 상세 보고서를 작성하세요. (\\n 사용)"
 }}
 """
     try:
