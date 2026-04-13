@@ -67,8 +67,9 @@ def build_vector_db(uploaded_files):
         docs = [Document(page_content=t) for t in splitter.split_text(all_texts)]
         # ★ 구글 임베딩 엔진 적용 (명시적으로 API 키 전달)
         api_key = os.environ.get("AIzaSyCh0zkuyDCuwh0EFysqQYTdca-kszRf9TQ")
-        emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-        return FAISS.from_documents(docs, emb)
+       emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+        # ★ FAISS 대신 100% 안전한 내장 메모리 DB로 교체
+        return InMemoryVectorStore.from_documents(docs, emb)
     except Exception as e: 
         print(f"지식베이스 구축 에러: {e}")
         return None
