@@ -13,7 +13,7 @@ import streamlit as st
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 # ★ 무거운 Chroma와 HuggingFace 대신 가벼운 FAISS와 구글 엔진 사용
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import InMemoryVectorStore
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from utils import get_limit_ppm
