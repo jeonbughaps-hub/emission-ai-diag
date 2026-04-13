@@ -19,7 +19,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from utils import get_limit_ppm
 
 def get_model(): 
-    # ★ 핵심: 순수 JSON 응답 강제
     return genai.GenerativeModel(
         "gemini-2.0-flash",
         generation_config={"response_mime_type": "application/json"}
@@ -31,11 +30,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 데이터 분석 중... 잠시만 기다려주세요. ({attempt+1}/{retries})")
+                st.toast(f"⏳ 정밀 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("구글 API 응답 제한을 초과했습니다. 잠시 후 다시 시도해주세요.")
+    raise Exception("API 응답 지연이 발생했습니다. 잠시 후 다시 시도해 주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -48,7 +47,7 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner=False)
 def build_vector_db(uploaded_files, location_key="default"):
-    # 주소나 파일 변경 시 캐시 갱신을 위해 날짜 키 사용
+    # 주소나 파일이 바뀌면 캐시가 갱신되도록 설정
     if not uploaded_files: return None
     all_texts = ""
     for _, fbytes in extract_pdfs_from_source(uploaded_files):
@@ -72,7 +71,7 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # ★ 모든 페이지 분석: 장수가 많으면 1.5배수, 적으면 2.0배수로 시력 최적화
+            # 모든 페이지를 읽되 메모리를 위해 지능형 화질 조절
             zoom = 2.0 if page_count <= 10 else 1.5
             for i in range(page_count):
                 page = doc[i]
@@ -101,29 +100,28 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
-    # ★ 공공데이터 업데이트를 위해 현재 시각 명시
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # ★ 데이터 추출을 위한 정밀 지시사항 부활
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (현재 시각: {current_time})
-업종: {user_industry} | THC 배출기준: {limit_text}
+당신은 한국환경공단 비산배출 전문 진단 AI입니다. (시점: {current_time})
+업종: {user_industry} | THC 기준: {limit_text}
 
-[수행 지침]
-1. 모든 페이지를 전수 조사하여 2021년, 2022년, 2023년 등 발견되는 모든 연도의 데이터를 추출하세요.
-2. '제출인(대표자)' 성명을 찾아 manager 데이터에 넣으세요.
-3. 모든 연도의 방지시설 측정 수치는 'prevention' 배열에 통합하여 연도순으로 정렬하세요.
-4. LDAR 점검 기록(대상/누출)은 'ldar' 배열에 연도별로 정리하세요.
+[반드시 수행할 추출 지침]
+1. manager: 문서의 '제출인', '대표자', '작성자' 성명을 찾아 연도별로 추출하십시오.
+2. prevention: 2021, 2022, 2023 등 모든 연도의 '방지시설 측정값'을 이 배열에 통합하세요.
+3. ldar: 연도별 점검 개수와 누출 수를 찾으세요. 데이터가 없으면 '0'으로 표기하세요.
 
 [JSON 구조]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
-  "manager": {{ "data": [] }},
-  "prevention": {{ "data": [] }},
+  "manager": {{ "data": [ {{"period": "연도", "name": "이름", "date": "날짜"}} ] }},
+  "prevention": {{ "data": [ {{"period": "연도/반기", "facility": "시설명", "value": "농도"}} ] }},
   "process_emission": {{ "data": [] }},
-  "ldar": {{ "data": [] }},
+  "ldar": {{ "data": [ {{"year": "연도", "leak_count": "0"}} ] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "문서 데이터를 근거로 한 1500자 이상의 분석 보고서를 작성하세요. (줄바꿈은 \\n 사용)"
+  "overall_opinion": "문서 데이터를 기반으로 1500자 이상의 상세 보고서를 작성하세요. (줄바꿈은 \\n 사용)"
 }}
 """
     try:
