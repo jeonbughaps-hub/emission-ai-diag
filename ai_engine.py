@@ -18,7 +18,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from utils import get_limit_ppm
 
 def get_model(): 
-    # 구글 AI에게 순수 JSON으로만 대답하도록 강제 설정
+    # ★ 에러 철벽 방어: 무조건 JSON으로만 대답하게 고정
     return genai.GenerativeModel(
         "gemini-2.0-flash",
         generation_config={"response_mime_type": "application/json"}
@@ -82,7 +82,7 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for page in doc:
-                # ★ 해상도를 다시 2배수(고화질)로 올려 AI의 시력을 회복하되, JPEG 압축으로 서버 다운 방지
+                # ★ 시력 회복: 화질을 2배수(Matrix 2, 2)로 높여 작은 글씨도 완벽히 읽게 만듦
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
                 if img.mode != 'RGB': img = img.convert('RGB')
@@ -118,30 +118,26 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             rag_text = "\n".join(d.page_content for d in docs)
         except Exception: pass
 
-    # ★ '한국환경공단'으로 명칭 변경 및 AI가 데이터를 빈칸으로 두지 않도록 상세한 예시 구조 제공
+    # ★ 앵무새 방지: 예시를 베끼지 말고 실제 데이터를 찾으라고 강력하게 명령
     prompt = f"""
 당신은 한국환경공단 비산배출시설 전문 진단 AI입니다.
 업종 분류: {user_industry}  |  방지시설 THC 배출허용기준: {limit_text}
 [법령 지식베이스 참고 발췌]: {rag_text[:800]}
 
 ==========================================================
-[임무 1 - 업로드된 모든 연도 데이터 전수 추출 및 오류 방지]
+[임무 1 - 업로드된 문서에서 "실제 데이터"만 추출]
 ==========================================================
-제공된 문서 이미지를 스캔하여 측정 데이터를 누락 없이 전부 JSON 배열에 누적 추출하십시오.
-1. 중복 추출 금지, 숫자 오인식 주의.
-2. 관리담당자: 선임되어 있으면 무조건 적합(A).
-3. 대기오염방지시설(THC): 'prevention' 배열에 추출. (농도가 {limit_text} 이하이면 '적합')
-4. 공정배출시설(냉각탑, 열교환기 등): 'process_emission' 배열에 별도로 추출.
-5. 비산누출시설(LDAR): 누출 초과 건수가 '0'이거나 조치완료 시 누출건수 '0', 판정 '적합'.
+업로드된 이미지(문서)를 꼼꼼히 읽고, 표 안에 적혀있는 진짜 데이터를 추출하세요.
+★경고★: 문서에 데이터가 없다면 억지로 지어내거나 예시를 베끼지 말고, 반드시 빈 배열 [ ] 을 반환하세요.
 
 ==========================================================
 [임무 2 - 준수율 종합 점수 산정]
 ==========================================================
-- manager_score, prevention_score, ldar_score, record_score를 기반으로 overall_score 산출
+- manager_score, prevention_score, ldar_score, record_score를 평가하여 overall_score 산출
 
 ==========================================================
 [최종 JSON 구조] 
-★경고★: 아래의 "data": [] 배열을 절대 빈칸으로 두지 마십시오. 문서에 데이터가 있다면 반드시 아래 예시 형식에 맞춰 모든 데이터를 추출하여 배열 안에 채워 넣으십시오.
+★경고★: 아래의 배열("data": []) 내부 값들은 단지 '구조를 보여주기 위한 가짜 예시'입니다. 절대 이 예시 글자들을 그대로 출력하지 마십시오! 문서에서 찾은 '실제 글자와 숫자'로 채워 넣으십시오.
 ==========================================================
 {{
   "scores": {{
@@ -153,22 +149,20 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   }},
   "manager": {{
     "data": [
-      {{"period": "2024년", "name": "홍길동", "date": "2024-01-01", "dept": "환경안전팀", "qualification": "대기환경기사"}}
+      {{"period": "2023년", "name": "김환경", "date": "2023-01-01", "dept": "환경팀", "qualification": "대기환경기사"}}
     ]
   }},
   "prevention": {{
     "data": [
-      {{"period": "2024년 상반기", "date": "2024-05-10", "facility": "AC-01", "value": "10.5", "limit": "{limit_text}", "accuracy_check": "양호", "result": "적합", "remark": "자가측정"}}
+      {{"period": "2023년 상반기", "date": "2023-05-15", "facility": "AC-01", "value": "12.5", "limit": "{limit_text}", "accuracy_check": "양호", "result": "적합", "remark": "자가측정"}}
     ]
   }},
   "process_emission": {{
-    "data": [
-      {{"period": "2024년 하반기", "date": "2024-11-15", "facility": "냉각탑", "value": "20.1", "limit": "50ppm", "accuracy_check": "양호", "result": "적합", "remark": "-"}}
-    ]
+    "data": []
   }},
   "ldar": {{
     "data": [
-      {{"year": "2024", "target_count": "150", "leak_count": "0", "leak_rate": "0%", "recheck_done": "해당없음", "result": "적합"}}
+      {{"year": "2023", "target_count": "120", "leak_count": "0", "leak_rate": "0%", "recheck_done": "해당없음", "result": "적합"}}
     ]
   }},
   "risk_matrix": [
@@ -177,7 +171,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "improvement_roadmap": [
     {{"phase": "단기(6개월 내)", "action": "활성탄 교체 주기 점검", "expected_effect": "THC 배출 농도 안정화"}}
   ],
-  "overall_opinion": "【1. 진단 배경 및 법적 근거】\\n본 진단은 한국환경공단... (이하 생략, 반드시 \\n 기호로 줄바꿈)"
+  "overall_opinion": "【1. 진단 배경 및 법적 근거】\\n(여기에 문서 내용을 바탕으로 한 1000자 이상의 상세한 진단 텍스트를 직접 작성하시오. 절대 예시 문구를 베끼지 말 것. 줄바꿈은 반드시 \\n 사용)"
 }}
 """
     try:
