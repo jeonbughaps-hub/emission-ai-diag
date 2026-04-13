@@ -73,7 +73,7 @@ def main():
     with col_logo: st.markdown("# 🏭")
     with col_title:
         st.markdown("# 비산배출시설 스마트 자가진단 시스템")
-        st.caption("환경부 비산배출 시설관리기준 자가진단 및 AI 정밀 분석 보고서 자동 생성")
+        st.caption("한국환경공단 비산배출 시설관리기준 자가진단 및 AI 정밀 분석 보고서 자동 생성")
     st.divider()
 
     tab1, tab2 = st.tabs(["📋 사업장 및 서류 입력", "🚀 진단 실행 및 결과"])
