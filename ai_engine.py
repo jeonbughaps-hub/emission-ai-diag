@@ -78,7 +78,6 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for page in doc:
-                # ★ 핵심 수정: 해상도를 낮추고 용량이 1/10 수준인 JPEG로 변환하여 메모리 폭발 차단
                 pix = page.get_pixmap(matrix=fitz.Matrix(1, 1))
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg")))
                 if img.mode != 'RGB': img = img.convert('RGB')
@@ -87,14 +86,19 @@ def convert_and_mask_images(pdf_list):
         except Exception: continue
     return all_images
 
+# ★ 핵심 수정 1: strict=False 추가. 
+# AI가 실제 엔터키(줄바꿈)를 쳐서 불량 JSON을 만들어도, 에러 내지 않고 강제로 읽어냅니다!
 def force_extract_json(text) -> dict:
     if text is None: return {}
     text = str(text) 
-    try: return json.loads(text.replace("```json", "").replace("```", "").strip())
+    clean_text = text.replace("```json", "").replace("```", "").strip()
+    try: 
+        return json.loads(clean_text, strict=False)
     except Exception: pass
+    
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
-        try: return json.loads(match.group())
+        try: return json.loads(match.group(), strict=False)
         except Exception: pass
     return {}
 
@@ -112,6 +116,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             rag_text = "\n".join(d.page_content for d in docs)
         except Exception: pass
 
+    # ★ 핵심 수정 2: AI에게 엔터키 사용을 엄격하게 금지하는 강력한 프롬프트 추가
     prompt = f"""
 당신은 환경부 비산배출시설 전문 진단 AI입니다.
 업종 분류: {user_industry}  |  방지시설 THC 배출허용기준: {limit_text}
@@ -166,7 +171,7 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "..."
+  "overall_opinion": "여기에 작성 (★절대 실제 엔터키를 치지 마십시오. 반드시 \\n 기호를 사용하여 줄바꿈 할 것)"
 }}
 """
     try:
