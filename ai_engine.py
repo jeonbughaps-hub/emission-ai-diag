@@ -18,7 +18,11 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from utils import get_limit_ppm
 
 def get_model(): 
-    return genai.GenerativeModel("gemini-2.0-flash")
+    # ★ 구글 AI에게 순수 JSON으로만 대답하도록 강제 설정
+    return genai.GenerativeModel(
+        "gemini-2.0-flash",
+        generation_config={"response_mime_type": "application/json"}
+    )
 
 def generate_with_retry(model, content_list, retries=5, delay=3):
     for attempt in range(retries):
@@ -86,21 +90,26 @@ def convert_and_mask_images(pdf_list):
         except Exception: continue
     return all_images
 
-# ★ 핵심 수정 1: strict=False 추가. 
-# AI가 실제 엔터키(줄바꿈)를 쳐서 불량 JSON을 만들어도, 에러 내지 않고 강제로 읽어냅니다!
+# ★ 렌더링 오류를 일으키던 코드를 제거하고, 가장 안전한 방식으로 변경했습니다.
 def force_extract_json(text) -> dict:
-    if text is None: return {}
-    text = str(text) 
-    clean_text = text.replace("```json", "").replace("```", "").strip()
-    try: 
-        return json.loads(clean_text, strict=False)
-    except Exception: pass
+    if not text: return {}
+    text = str(text).strip()
     
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try: return json.loads(match.group(), strict=False)
-        except Exception: pass
-    return {}
+    # '{' 와 '}' 기호 사이의 텍스트만 안전하게 추출합니다.
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+        json_str = text[start_idx:end_idx+1]
+        try:
+            return json.loads(json_str, strict=False)
+        except:
+            pass
+            
+    try: 
+        return json.loads(text, strict=False)
+    except: 
+        return {}
 
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     if not os.environ.get("GOOGLE_API_KEY") or not measure_images: 
@@ -116,7 +125,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             rag_text = "\n".join(d.page_content for d in docs)
         except Exception: pass
 
-    # ★ 핵심 수정 2: AI에게 엔터키 사용을 엄격하게 금지하는 강력한 프롬프트 추가
     prompt = f"""
 당신은 환경부 비산배출시설 전문 진단 AI입니다.
 업종 분류: {user_industry}  |  방지시설 THC 배출허용기준: {limit_text}
@@ -155,7 +163,7 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
 【5. 중장기 개선 로드맵 및 정책 제언】
 
 ==========================================================
-[최종 JSON 구조] 
+[최종 JSON 구조] (반드시 이 구조와 키 값을 지켜서 순수한 JSON 형식으로만 답변할 것)
 ==========================================================
 {{
   "scores": {{
@@ -180,7 +188,7 @@ overall_opinion 필드에 아래 5개 목차 구조를 지켜 작성.
         try:
             raw_text = str(response.text)
         except Exception as e:
-            raw_text = f"{{}} (텍스트 추출 에러: {str(e)} / 보안 필터에 의해 차단되었을 수 있습니다.)"
+            raw_text = f"{{}} (텍스트 추출 에러: {str(e)})"
             
         parsed_data = force_extract_json(raw_text)
         
