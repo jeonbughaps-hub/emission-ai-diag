@@ -19,6 +19,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from utils import get_limit_ppm
 
 def get_model(): 
+    # ★ 핵심: 순수 JSON 응답 강제
     return genai.GenerativeModel(
         "gemini-2.0-flash",
         generation_config={"response_mime_type": "application/json"}
@@ -30,11 +31,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 데이터 정밀 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 데이터 분석 중... 잠시만 기다려주세요. ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("구글 API 응답 초과. 잠시 후 다시 시도해주세요.")
+    raise Exception("구글 API 응답 제한을 초과했습니다. 잠시 후 다시 시도해주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -47,7 +48,7 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner=False)
 def build_vector_db(uploaded_files, location_key="default"):
-    # 캐시 갱신을 위해 날짜 기반 키 생성
+    # 주소나 파일 변경 시 캐시 갱신을 위해 날짜 키 사용
     if not uploaded_files: return None
     all_texts = ""
     for _, fbytes in extract_pdfs_from_source(uploaded_files):
@@ -71,11 +72,12 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # 모든 페이지를 고화질(2.0배수)로 스캔하여 인식 오류 방지
+            # ★ 모든 페이지 분석: 장수가 많으면 1.5배수, 적으면 2.0배수로 시력 최적화
+            zoom = 2.0 if page_count <= 10 else 1.5
             for i in range(page_count):
                 page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 90)))
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
             fbytes.seek(0)
@@ -95,24 +97,24 @@ def force_extract_json(text) -> dict:
 
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     if not os.environ.get("GOOGLE_API_KEY") or not measure_images: 
-        return {"parsed": {}, "raw": "데이터 부족"}
+        return {"parsed": {}, "raw": ""}
 
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
+    # ★ 공공데이터 업데이트를 위해 현재 시각 명시
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # AI가 예시를 베끼지 않고 실제 문서를 철저히 분석하도록 프롬프트 구조화
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (기준 시점: {current_time})
+당신은 한국환경공단 전문 진단 AI입니다. (현재 시각: {current_time})
 업종: {user_industry} | THC 배출기준: {limit_text}
 
-[수행 가이드]
-1. 문서의 모든 페이지를 읽고 2021년, 2022년, 2023년 등 발견되는 모든 연도의 데이터를 빠짐없이 추출하세요.
-2. 제출인(대표자) 성명은 반드시 'manager' 항목에 포함하세요.
+[수행 지침]
+1. 모든 페이지를 전수 조사하여 2021년, 2022년, 2023년 등 발견되는 모든 연도의 데이터를 추출하세요.
+2. '제출인(대표자)' 성명을 찾아 manager 데이터에 넣으세요.
 3. 모든 연도의 방지시설 측정 수치는 'prevention' 배열에 통합하여 연도순으로 정렬하세요.
 4. LDAR 점검 기록(대상/누출)은 'ldar' 배열에 연도별로 정리하세요.
 
-[응답 JSON 구조]
+[JSON 구조]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
   "manager": {{ "data": [] }},
@@ -121,7 +123,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "문서의 실제 데이터를 근거로 한 1500자 이상의 상세 분석 보고서를 작성하십시오. (줄바꿈은 \\n 사용)"
+  "overall_opinion": "문서 데이터를 근거로 한 1500자 이상의 분석 보고서를 작성하세요. (줄바꿈은 \\n 사용)"
 }}
 """
     try:
