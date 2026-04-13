@@ -4,7 +4,7 @@ PyMuPDF
 Pillow
 requests
 pandas
-fpdf
+fpdf2
 langchain-community
 langchain-text-splitters
 langchain-core
