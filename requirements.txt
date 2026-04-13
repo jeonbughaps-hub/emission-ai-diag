@@ -8,6 +8,5 @@ fpdf
 langchain-community
 langchain-text-splitters
 langchain-core
-sentence-transformers
-torch
-torchvision
+langchain-google-genai
+faiss-cpu
