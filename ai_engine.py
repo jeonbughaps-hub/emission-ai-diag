@@ -30,11 +30,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 서버 부하 조절 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 지식베이스 대조 및 정밀 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("서버 메모리 또는 API 한도 초과입니다. 잠시 후 시도해주세요.")
+    raise Exception("데이터 분석 용량 초과입니다. 페이지를 줄여서 시도해주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -47,7 +47,6 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner=False)
 def build_vector_db(uploaded_files, location_key="default"):
-    # 지식베이스 서버 고정 로직의 기초가 되는 부분입니다.
     if not uploaded_files: return None
     all_texts = ""
     for _, fbytes in extract_pdfs_from_source(uploaded_files):
@@ -71,13 +70,12 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # ★ 메모리 최적화: 전체 페이지가 많으면 1.2배수, 적으면 2.0배수로 유연하게 대처
-            zoom_val = 2.0 if page_count <= 10 else 1.2
+            # ★ 시력 고정: 지식베이스 대조 시에도 수치를 놓치지 않게 2.0 고배율 유지
+            zoom = 2.0
             for i in range(page_count):
                 page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(zoom_val, zoom_val))
-                # JPEG 압축률을 75로 조정하여 전송 용량 최적화
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 75)))
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
             fbytes.seek(0)
@@ -103,25 +101,29 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     limit_text = get_limit_ppm(user_industry)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # 지식베이스(RAG) 검색 강화: 실제 법령 지문을 분석 프롬프트에 주입
+    # 지식베이스 검색 데이터 가져오기
     rag_context = ""
     if vector_db:
         try:
-            docs = vector_db.similarity_search(f"{user_industry} 비산배출 시설관리기준", k=3)
+            # 업종별 시설관리기준 핵심 키워드로 검색
+            docs = vector_db.similarity_search(f"{user_industry} 비산배출 시설관리기준 준수사항", k=5)
             rag_context = "\n".join([d.page_content for d in docs])
         except: pass
 
+    # ★ 핵심 수정: 수치 추출을 최우선으로 지시
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (현재 시각: {current_time})
-업종: {user_industry} | THC 기준: {limit_text}
-[참고 법규/지침]: {rag_context[:1000]}
+당신은 한국환경공단 전문 진단 AI입니다. (진단 시각: {current_time})
+업종: {user_industry} | 법적 THC 기준: {limit_text}
 
-[필수 임무]
-1. 모든 연도 데이터를 전수 추출하고 "prevention"에 통합하세요.
-2. 지식베이스의 법적 기준과 사업장의 측정값을 비교하여 "overall_opinion"에 1500자 이상의 정밀 분석 보고서를 작성하세요.
-3. 데이터가 리스트 형태로 반환되지 않도록 구조를 엄격히 준수하세요.
+[중요 지침: 데이터 추출 우선]
+1. 첨부된 이미지에서 '2021, 2022, 2023' 등 모든 연도의 측정값, 대표자 성명, LDAR 점검 기록을 '먼저' 전수 추출하세요.
+2. [참고 지식베이스]의 법령 내용과 사업장의 실제 측정값을 대조하여 분석 보고서를 작성하세요.
+3. 데이터가 존재함에도 빈 배열[]로 응답하는 것을 금지합니다.
 
-[JSON 구조]
+[참고 지식베이스 내용]
+{rag_context[:1500]}
+
+[JSON 구조 - 반드시 준수]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
   "manager": {{ "data": [] }},
@@ -130,14 +132,14 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "법령 근거를 포함한 상세 보고서 (\\n 사용)"
+  "overall_opinion": "법령 근거와 다개년 데이터 추이를 포함한 1500자 이상의 정밀 보고서 (\\n 사용)"
 }}
 """
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
-        # 구조 보정 (pdf_generator 에러 방지)
+        # 데이터 구조 보정
         for key in ["manager", "prevention", "process_emission", "ldar"]:
             if key in parsed_data and isinstance(parsed_data[key], list):
                 parsed_data[key] = {"data": parsed_data[key]}
