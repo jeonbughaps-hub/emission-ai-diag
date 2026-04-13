@@ -10,6 +10,10 @@ import random
 import zipfile
 import streamlit as st
 from datetime import datetime
+import warnings # ★ 알림 숨기기용
+
+# ★ 꼴보기 싫은 구글의 미래 경고 알림(FutureWarning)을 강제로 끕니다.
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
@@ -30,11 +34,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 지식베이스 대조 및 정밀 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 지식베이스 정밀 분석 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("데이터 분석 용량 초과입니다. 페이지를 줄여서 시도해주세요.")
+    raise Exception("서버 용량 초과입니다. 분석 대상 페이지를 조금 줄여주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -70,12 +74,13 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # ★ 시력 고정: 지식베이스 대조 시에도 수치를 놓치지 않게 2.0 고배율 유지
-            zoom = 2.0
+            # ★ 메모리 세이프 모드: 지식베이스와 함께 분석할 때는 화질을 1.5배수로 소폭 조정
+            zoom = 1.5 if page_count > 10 else 2.0
             for i in range(page_count):
                 page = doc[i]
                 pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
+                # 압축률을 높여 서버 부하 경감
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 80)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
             fbytes.seek(0)
@@ -101,29 +106,24 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     limit_text = get_limit_ppm(user_industry)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # 지식베이스 검색 데이터 가져오기
     rag_context = ""
     if vector_db:
         try:
-            # 업종별 시설관리기준 핵심 키워드로 검색
-            docs = vector_db.similarity_search(f"{user_industry} 비산배출 시설관리기준 준수사항", k=5)
+            # ★ RAG 최적화: 가장 핵심적인 법규 내용 3개만 추출하여 AI에게 전달
+            docs = vector_db.similarity_search(f"{user_industry} 시설관리기준 위반 처분", k=3)
             rag_context = "\n".join([d.page_content for d in docs])
         except: pass
 
-    # ★ 핵심 수정: 수치 추출을 최우선으로 지시
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (진단 시각: {current_time})
-업종: {user_industry} | 법적 THC 기준: {limit_text}
+당신은 한국환경공단 전문 진단 AI입니다. (시점: {current_time})
+업종: {user_industry} | THC 기준: {limit_text}
 
-[중요 지침: 데이터 추출 우선]
-1. 첨부된 이미지에서 '2021, 2022, 2023' 등 모든 연도의 측정값, 대표자 성명, LDAR 점검 기록을 '먼저' 전수 추출하세요.
-2. [참고 지식베이스]의 법령 내용과 사업장의 실제 측정값을 대조하여 분석 보고서를 작성하세요.
-3. 데이터가 존재함에도 빈 배열[]로 응답하는 것을 금지합니다.
+[임무]
+1. 첨부된 이미지에서 모든 연도의 수치 데이터를 전수 추출하세요.
+2. [법규 지침]을 바탕으로 현재 사업장의 관리 수준을 정밀 분석하세요.
+{rag_context[:1000]}
 
-[참고 지식베이스 내용]
-{rag_context[:1500]}
-
-[JSON 구조 - 반드시 준수]
+[JSON 구조 준수]
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
   "manager": {{ "data": [] }},
@@ -132,14 +132,14 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [] }},
   "risk_matrix": [],
   "improvement_roadmap": [],
-  "overall_opinion": "법령 근거와 다개년 데이터 추이를 포함한 1500자 이상의 정밀 보고서 (\\n 사용)"
+  "overall_opinion": "법령 근거와 다개년 추이를 포함한 1500자 이상의 상세 보고서 (\\n 사용)"
 }}
 """
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
-        # 데이터 구조 보정
+        # 데이터 구조 보충 (에러 방지)
         for key in ["manager", "prevention", "process_emission", "ldar"]:
             if key in parsed_data and isinstance(parsed_data[key], list):
                 parsed_data[key] = {"data": parsed_data[key]}
