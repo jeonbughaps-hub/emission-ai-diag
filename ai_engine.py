@@ -12,8 +12,7 @@ import streamlit as st
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-# ★ 무거운 Chroma와 HuggingFace 대신 가벼운 FAISS와 구글 엔진 사용
-from langchain_community.vectorstores import InMemoryVectorStore
+from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from utils import get_limit_ppm
@@ -65,10 +64,9 @@ def build_vector_db(uploaded_files):
     try:
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = [Document(page_content=t) for t in splitter.split_text(all_texts)]
-        # ★ 구글 임베딩 엔진 적용 (명시적으로 API 키 전달)
-        api_key = os.environ.get("AIzaSyCh0zkuyDCuwh0EFysqQYTdca-kszRf9TQ")
-       emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-        # ★ FAISS 대신 100% 안전한 내장 메모리 DB로 교체
+        
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        emb = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
         return InMemoryVectorStore.from_documents(docs, emb)
     except Exception as e: 
         print(f"지식베이스 구축 에러: {e}")
