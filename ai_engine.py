@@ -30,11 +30,11 @@ def generate_with_retry(model, content_list, retries=5, delay=3):
         except Exception as e:
             if "429" in str(e) or "Resource exhausted" in str(e) or "503" in str(e):
                 wait = delay * (1.5 ** attempt) + random.uniform(0, 1)
-                st.toast(f"⏳ 데이터 정밀 분석 중... ({attempt+1}/{retries})")
+                st.toast(f"⏳ 서버 부하 조절 중... ({attempt+1}/{retries})")
                 time.sleep(wait)
                 continue
             raise e
-    raise Exception("API 응답 지연입니다. 잠시 후 다시 시도해 주세요.")
+    raise Exception("서버 메모리 또는 API 한도 초과입니다. 잠시 후 시도해주세요.")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -47,6 +47,7 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner=False)
 def build_vector_db(uploaded_files, location_key="default"):
+    # 지식베이스 서버 고정 로직의 기초가 되는 부분입니다.
     if not uploaded_files: return None
     all_texts = ""
     for _, fbytes in extract_pdfs_from_source(uploaded_files):
@@ -70,11 +71,13 @@ def convert_and_mask_images(pdf_list):
         try:
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             page_count = len(doc)
-            # 인식률을 위해 2.0 고화질 유지
+            # ★ 메모리 최적화: 전체 페이지가 많으면 1.2배수, 적으면 2.0배수로 유연하게 대처
+            zoom_val = 2.0 if page_count <= 10 else 1.2
             for i in range(page_count):
                 page = doc[i]
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 90)))
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom_val, zoom_val))
+                # JPEG 압축률을 75로 조정하여 전송 용량 최적화
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 75)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
             fbytes.seek(0)
@@ -98,46 +101,43 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
-    current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # 지식베이스(RAG) 검색 강화: 실제 법령 지문을 분석 프롬프트에 주입
+    rag_context = ""
+    if vector_db:
+        try:
+            docs = vector_db.similarity_search(f"{user_industry} 비산배출 시설관리기준", k=3)
+            rag_context = "\n".join([d.page_content for d in docs])
+        except: pass
 
-    # ★ 데이터 구조를 명확히 정의하여 AttributeError 방지
     prompt = f"""
-당신은 한국환경공단 전문 진단 AI입니다. (현재 분석 시각: {current_time_str})
-업종: {user_industry} | THC 배출기준: {limit_text}
+당신은 한국환경공단 전문 진단 AI입니다. (현재 시각: {current_time})
+업종: {user_industry} | THC 기준: {limit_text}
+[참고 법규/지침]: {rag_context[:1000]}
 
-[수행 지침]
-1. 모든 페이지를 전수 조사하여 2021, 2022, 2023 등 모든 연도의 데이터를 추출하세요.
-2. 각 항목(manager, prevention, ldar)은 반드시 아래 JSON 구조와 같이 "data"라는 키를 가진 딕셔너리 형태로 응답하세요.
+[필수 임무]
+1. 모든 연도 데이터를 전수 추출하고 "prevention"에 통합하세요.
+2. 지식베이스의 법적 기준과 사업장의 측정값을 비교하여 "overall_opinion"에 1500자 이상의 정밀 분석 보고서를 작성하세요.
+3. 데이터가 리스트 형태로 반환되지 않도록 구조를 엄격히 준수하세요.
 
-[JSON 구조 - 이 형식을 절대 엄수하세요]
+[JSON 구조]
 {{
-  "scores": {{ 
-    "manager_score": {{"score":100, "grade":"A", "reason": "관리자 선임 확인"}}, 
-    "prevention_score": {{"score":100, "grade":"A", "reason": "다개년 농도 적합"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason": "누출 없음"}}, 
-    "record_score": {{"score":90, "grade":"A", "reason": "기록 양호"}}, 
-    "overall_score": {{"score":97, "grade":"A"}} 
-  }},
-  "manager": {{
-    "data": [ {{"period": "연도", "name": "성명", "dept": "부서", "date": "선임일", "qualification": "자격"}} ]
-  }},
-  "prevention": {{
-    "data": [ {{"period": "연도/반기", "date": "측정일", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "result": "적합"}} ]
-  }},
+  "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":100, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":97, "grade":"A"}} }},
+  "manager": {{ "data": [] }},
+  "prevention": {{ "data": [] }},
   "process_emission": {{ "data": [] }},
-  "ldar": {{
-    "data": [ {{"year": "연도", "target_count": "0", "leak_count": "0", "leak_rate": "0%", "result": "적합"}} ]
-  }},
-  "risk_matrix": [ {{"item": "방지시설 농도 관리", "probability": "낮음", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "점검 강화", "expected_effect": "안정화"}} ],
-  "overall_opinion": "문서 데이터를 기반으로 1500자 이상의 상세 보고서를 작성하세요. (줄바꿈은 \\n 사용)"
+  "ldar": {{ "data": [] }},
+  "risk_matrix": [],
+  "improvement_roadmap": [],
+  "overall_opinion": "법령 근거를 포함한 상세 보고서 (\\n 사용)"
 }}
 """
     try:
         response = generate_with_retry(model, [prompt, *measure_images])
         parsed_data = force_extract_json(response.text)
         
-        # 만약 AI가 실수로 딕셔너리가 아닌 리스트로 보냈을 경우를 대비한 방어 로직
+        # 구조 보정 (pdf_generator 에러 방지)
         for key in ["manager", "prevention", "process_emission", "ldar"]:
             if key in parsed_data and isinstance(parsed_data[key], list):
                 parsed_data[key] = {"data": parsed_data[key]}
