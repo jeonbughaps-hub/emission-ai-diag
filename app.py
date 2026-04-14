@@ -2,7 +2,6 @@ import streamlit as st
 import os
 from datetime import datetime
 
-# 관련 모듈 임포트
 from utils import (
     get_auto_station_and_coord, get_air_quality, get_env_office, 
     generate_rich_advice, get_limit_ppm
@@ -18,12 +17,11 @@ try:
     AIRKOREA_API_KEY = st.secrets["AIRKOREA_API_KEY"]
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 except Exception:
-    st.error("Secrets 설정에서 API 키를 확인해주세요.")
+    st.error("Streamlit Secrets 설정에서 API 키를 확인해주세요.")
     st.stop()
 
 st.set_page_config(page_title="HAPs-AI 진단 시스템", layout="wide")
 
-# 세션 상태 초기화
 if "target_station" not in st.session_state:
     st.session_state.target_station = "내포"
 
@@ -31,9 +29,8 @@ st.title("🛡️ 비산배출시설 환경관리 정밀 진단 시스템")
 
 with st.sidebar:
     st.header("🏢 사업장 기본 정보")
-    user_addr = st.text_input("사업장 주소", "충남 홍성군 구항면")
+    user_addr = st.text_input("사업장 주소", "전북 전주시 덕진구")
     
-    # 주소 입력 시 측정소 자동 갱신
     new_station, coords = get_auto_station_and_coord(user_addr)
     st.session_state.target_station = new_station
     
@@ -42,7 +39,7 @@ with st.sidebar:
     
     st.info(f"📍 관할 측정소: {st.session_state.target_station}")
 
-# 2. 실시간 공공데이터 연동
+# 실시간 공공데이터 연동
 air_data = get_air_quality(st.session_state.target_station, AIRKOREA_API_KEY)
 advice_text = generate_rich_advice(air_data, st.session_state.target_station)
 
@@ -57,24 +54,20 @@ with col1:
             st.warning("분석할 운영기록부 파일을 업로드해주세요.")
         else:
             with st.spinner("AI가 지식베이스를 바탕으로 정밀 분석 중입니다..."):
-                # 이미지 변환 및 분석
                 pdf_list = extract_pdfs_from_source(main_files)
                 images = convert_and_mask_images(pdf_list)
                 
-                # 서버 지식베이스(VDB) 빌드
                 vdb = build_vector_db()
-                
-                # 분석 수행
                 result = analyze_log_compliance(images, user_industry, vdb)
                 
                 if result["parsed"]:
                     st.success("✅ 분석 완료!")
                     
-                    # PDF 생성
                     user_info = {
                         "name": user_name, "addr": user_addr, 
                         "industry": user_industry, "office": get_env_office(user_addr)
                     }
+                    # ★ 인자 5개 정상 전달
                     pdf_bytes = create_gov_report_pdf(result["parsed"], user_info, advice_text, air_data, st.session_state.target_station)
                     
                     st.download_button(
