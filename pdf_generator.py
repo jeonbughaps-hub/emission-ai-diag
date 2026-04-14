@@ -307,7 +307,7 @@ class ProfessionalPDF(FPDF):
         try: pm10_f = float(str(pm10_str)) if str(pm10_str) not in ("-", "", "None") else 0.0
         except: pm10_f = 0.0
 
-        o3_status, o3_color = "보통", SCORE_COLORS["B"] # 간소화: utils에서 판별해도 좋음
+        o3_status, o3_color = "보통", SCORE_COLORS["B"]
         pm10_status, pm10_color = "보통", SCORE_COLORS["B"]
         if o3_f > 0.09: o3_status, o3_color = "나쁨", SCORE_COLORS["D"]
         if pm10_f > 80: pm10_status, pm10_color = "나쁨", SCORE_COLORS["D"]
@@ -446,7 +446,7 @@ class ProfessionalPDF(FPDF):
                 self.set_x(x + 8); self.multi_cell(w - 8, 6.5, line)
         self.ln(2)
 
-# ★ 5개의 인자를 정확히 받도록 수정 완료 (map_coord 제거)
+# ★ 5개의 인자를 정확히 받도록 서명 수정 및 KeyError 방지
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일")
     data    = ai_data.get("parsed", {})
@@ -480,15 +480,20 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ("마. 위험도 매트릭스 및 행정처분 가능성", "4"),
         ("바. AI 종합 진단 및 중장기 개선 권고",   "5"),
         ("사. 관련 규제 및 행정처분 참고사항",     "5"),
-        ("아. 자가 체크리스트 (점검표)",           "6"),
+        ("자. 자가 체크리스트 (점검표)",           "6"),
     ])
 
     pdf = ProfessionalPDF(toc_data=toc_items)
     pdf._reg_fonts()
     pdf.set_auto_page_break(auto=True, margin=15)
 
+    # 안전한 딕셔너리 값 추출 (app.py 구조와 매핑)
+    company_name = user_info.get("name", user_info.get("company", "-"))
+    address_str  = user_info.get("addr", user_info.get("address", "-"))
+    industry_str = user_info.get("industry", "-")
+
     pdf.add_page()
-    pdf.draw_cover(company=user_info["company"], address=user_info["address"], industry=user_info["industry"], permit_no=user_info.get("permit_no", "-"), date_str=now_str)
+    pdf.draw_cover(company=company_name, address=address_str, industry=industry_str, permit_no=user_info.get("permit_no", "-"), date_str=now_str)
 
     pdf.add_page()
     pdf.draw_toc(toc_items)
@@ -497,17 +502,17 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_section_header("가. 사업장 및 진단 개요")
     pdf.draw_sub_header("1) 기본 정보 요약표")
 
-    env_office = get_env_office(user_info["address"])
+    env_office = get_env_office(address_str)
     
-    # ★ 안전한 데이터 타임 가져오기
+    # ★ 안전한 데이터 타임 가져오기 (공공데이터)
     data_time = air_data.get("dataTime", datetime.now().strftime("%Y-%m-%d %H:00")) if air_data else datetime.now().strftime("%Y-%m-%d %H:00")
 
     overview_rows = [
-        ["사업장명",        user_info["company"],                  "사업자등록번호", user_info.get("biz_no", "-")],
-        ["소재지",          user_info["address"],                  "관할 환경청",    env_office],
-        ["대표자",          user_info["rep"],                      "업종 분류",      user_info["industry"]],
-        ["허가·신고 번호",  user_info.get("permit_no", "-"),       "THC 배출기준",   get_limit_ppm(user_info["industry"])],
-        ["담당자 연락처",   user_info.get("tel", "-"),             "진단 일자",      now_str],
+        ["사업장명",        company_name,                  "사업자등록번호", user_info.get("biz_no", "-")],
+        ["소재지",          address_str,                   "관할 환경청",    env_office],
+        ["대표자",          user_info.get("rep", "-"),     "업종 분류",      industry_str],
+        ["허가·신고 번호",  user_info.get("permit_no", "-"),"THC 배출기준",   get_limit_ppm(industry_str)],
+        ["담당자 연락처",   user_info.get("tel", "-"),     "진단 일자",      now_str],
         ["진단 수행 기관",  "비산배출 AI 자가진단 시스템",         "시스템 버전",    "Professional v105.1"],
         ["관할 대기측정소", station_name,                          "진단 범위",      "다개년 운영기록 전수 추출"],
         ["주요 배출 공정",  "(운영기록부 기재 기준)",              "주요 오염물질",  "VOCs / THC / LDAR 대상물질"],
@@ -563,7 +568,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     prev_data_list = prev.get("data", [])
     try: prev_data_list.sort(key=lambda x: str(x.get("period", "")))
     except: pass
-    prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit", get_limit_ppm(user_info["industry"])), p.get("accuracy_check","-"), p.get("result","-")] for p in prev_data_list]
+    prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit", get_limit_ppm(industry_str)), p.get("accuracy_check","-"), p.get("result","-")] for p in prev_data_list]
     pdf.draw_grouped_table(["구분(반기)", "측정일", "방지시설명", "측정결과", "기준", "증빙", "판정"], prev_rows, [30, 25, 55, 25, 20, 15, 20], highlight_last_col=True)
     
     if prev.get("trend_summary"): pdf.draw_text_box(prev["trend_summary"], title="📈 THC 측정결과 추이 분석")
