@@ -607,18 +607,50 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     op = data.get("overall_opinion", "AI 분석 내용을 가져오지 못했습니다.")
     pdf.draw_text_box(op)
 
+   # ---------------------------------------------------------
+    # 사. 관련 규제 및 행정처분 참고사항 (텍스트 표 대신 이미지 고정 삽입)
+    # ---------------------------------------------------------
+    pdf.add_page()
     pdf.draw_section_header("사. 관련 규제 및 행정처분 참고사항")
-    ref_sections = [
-        {"title": "1) 주요 형사처벌 기준", "headers": ["위반 행위", "처분 내용 (최대)"], "rows": [["개선명령 미이행", "1년 이하 징역 / 1천만원 이하 벌금"], ["조업정지명령 미이행", "5년 이하 징역 / 5천만원 이하 벌금"]], "widths": [90, 100]},
-        {"title": "2) 행정 과태료 기준", "headers": ["위반 행위", "과태료 금액 (최대)"], "rows": [["시설관리기준 준수여부 미확인", "200만원 이하"], ["정기점검보고서 미제출/거짓제출", "300만원 이하"]], "widths": [120, 70]},
-        {"title": "3) 가중 행정처분 기준 (횟수별)", "headers": ["위반 내역", "1차 처분", "2차 처분", "3차 처분"], "rows": [["시설관리기준 미준수", "경고", "조업정지 10일", "조업정지 20일"], ["LDAR 점검 미실시", "과태료 200만", "조업정지 10일", "허가 취소"]], "widths": [55, 45, 45, 45]},
-        {"title": "4) 의무 변경신고 요건", "headers": ["구분", "주요 변경 요건", "법정 신고 기한"], "rows": [["사업장", "대표자 등 주요 인적사항 변경", "사유 발생 30일 이내"], ["배출시설", "시설의 신설·증설·폐쇄", "설치/변경 전 미리 신고"]], "widths": [30, 100, 60]},
-    ]
-    for sec in ref_sections:
-        pdf.draw_sub_header(sec["title"])
-        pdf.draw_zebra_table(sec["headers"], sec["rows"], sec["widths"])
+    pdf.ln(5)
+    
+    # 1. 행정처분 규정 표 이미지 삽입
+    try:
+        # x=10(좌측 여백), w=190(용지 폭에 맞춤)
+        pdf.image("assets/penalty_table.png", x=10, w=190)
+    except Exception:
+        pdf.set_font(fn, "", 10); pdf.set_text_color(200, 0, 0)
+        pdf.draw_text_box("[이미지 로드 실패: assets/penalty_table.png 파일을 확인하세요]")
+    
+    pdf.ln(15)
 
-    pdf.draw_section_header("아. 자가 체크리스트 (정기 점검표)")
+    # ---------------------------------------------------------
+    # 아. 비산배출시설 변경신고 및 추진체계 (새로 추가된 항목)
+    # ---------------------------------------------------------
+    pdf.draw_section_header("아. 비산배출시설 변경신고 및 추진체계")
+    pdf.ln(5)
+    
+    # 2. 변경신고 이미지 삽입
+    try:
+        pdf.image("assets/change_report.jpg", x=10, w=190)
+    except Exception:
+        pdf.draw_text_box("[이미지 로드 실패: assets/change_report.jpg]")
+        
+    pdf.ln(10)
+    
+    # 3. 추진체계 이미지 삽입
+    try:
+        pdf.image("assets/system_flow.jpg", x=10, w=190)
+    except Exception:
+        pdf.draw_text_box("[이미지 로드 실패: assets/system_flow.jpg]")
+
+    pdf.ln(10)
+
+    # ---------------------------------------------------------
+    # 자. 자가 체크리스트 (정기 점검표) - 기존 '아'에서 '자'로 변경
+    # ---------------------------------------------------------
+    pdf.add_page()
+    pdf.draw_section_header("자. 자가 체크리스트 (정기 점검표)")
     pdf.draw_sub_header("□ 비산배출시설 일상 점검 체크리스트")
     checklist = [
         ("일일", "방지시설 가동 상태 확인 및 이상 유무 기록"),
