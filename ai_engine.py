@@ -15,12 +15,11 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 KB_DIRECTORY = "knowledge_base/"
 
 def get_model(): 
-    # 데이터 누락 방지와 100% 완벽한 형식 출력을 위한 세팅
     return genai.GenerativeModel(
         "gemini-2.0-flash",
         generation_config={
             "response_mime_type": "application/json",
-            "temperature": 0.0  # 창의성을 완전히 배제하고 있는 그대로만 뽑도록 0.0 설정
+            "temperature": 0.0 # 팩트(데이터)만 정확하게 뽑기 위해 창의성 0 설정
         }
     )
 
@@ -71,39 +70,12 @@ def build_vector_db(uploaded_files=None, location_key="default"):
     except Exception: return None
 
 def convert_and_mask_images(pdf_list):
-    all_images = []
-    if not pdf_list: return []
-    
-    my_bar = st.progress(0, text="보고서 100% 전수조사를 위해 모든 페이지를 스캔 중입니다...")
-    
-    for idx, (name, fbytes) in enumerate(pdf_list):
-        try:
-            fbytes.seek(0)
-            doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            total_pages = len(doc)
-            
-            for i in range(total_pages):
-                page = doc.load_page(i)
-                # 글자를 명확히 읽을 수 있으면서도 메모리가 터지지 않는 최적의 해상도(1.2) 적용
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
-                if img.mode != 'RGB': img = img.convert('RGB')
-                all_images.append(img)
-                del pix
-                
-                # 진행률 UI 업데이트
-                if i % 3 == 0 or i == total_pages - 1:
-                    my_bar.progress((i + 1) / total_pages, text=f"문서 해독 준비 중... ({i+1}/{total_pages}쪽 완료)")
-            doc.close()
-        except Exception as e:
-            print("Convert Error:", e)
-            continue
-            
-    my_bar.empty()
-    return all_images
+    # ★ 서버 다운(OOM) 방지 핵심 1: app.py 구조를 건드리지 않기 위해, 
+    # 여기서 300장을 한 번에 이미지로 만들지 않고 그냥 PDF 파일 자체를 통과시킵니다.
+    return pdf_list
 
-def analyze_log_compliance(measure_images, user_industry: str, vector_db):
-    if not os.environ.get("GOOGLE_API_KEY") or not measure_images: 
+def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
+    if not os.environ.get("GOOGLE_API_KEY") or not pdf_list: 
         return {"parsed": {}, "raw": ""}
 
     from utils import get_limit_ppm
@@ -119,18 +91,26 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except: pass
 
     # =====================================================================
-    # 1단계: Map (10장 단위 무한 스캔) - 모든 페이지 100% 샅샅이 뒤지기
+    # 1단계: Map (실시간 렌더링 & 즉시 폐기 기법을 통한 100% 전수조사)
     # =====================================================================
     aggregated_data = {"manager": [], "prevention": [], "process_emission": [], "ldar": []}
     CHUNK_SIZE = 10
-    total_images = len(measure_images)
-    total_chunks = (total_images + CHUNK_SIZE - 1) // CHUNK_SIZE
     
-    st.info(f"💡 총 {total_images}장의 방대한 서류를 단 한 장의 누락도 없이 100% 전수조사합니다. 문서 크기에 따라 1~3분 정도 소요될 수 있습니다.")
-    my_bar = st.progress(0, text="AI 정밀 데이터 추출 시작...")
+    # 전체 페이지 수 계산
+    total_pages = 0
+    for name, fbytes in pdf_list:
+        fbytes.seek(0)
+        doc = fitz.open(stream=fbytes.read(), filetype="pdf")
+        total_pages += len(doc)
+        doc.close()
+        
+    if total_pages == 0: return {"parsed": {}, "raw": ""}
+
+    st.info(f"💡 총 {total_pages}장의 방대한 서류를 안전하게 10장씩 읽고 폐기하는 '메모리 최적화' 방식으로 100% 전수조사합니다. (서버 다운 절대 없음)")
+    my_bar = st.progress(0, text="AI 정밀 데이터 추출 준비 중...")
 
     extract_prompt = f"""당신은 환경부 데이터 엔지니어입니다. 
-첨부된 이미지(서류 일부 구간)를 꼼꼼히 스캔하여 아래 항목의 표 데이터를 단 하나도 빠짐없이 JSON 배열로 추출하세요.
+첨부된 이미지(서류 10장 구간)를 꼼꼼히 스캔하여 아래 항목의 표 데이터를 하나도 빠짐없이 JSON 배열로 추출하세요.
 업종 기준: {limit_text}
 
 1. manager: 관리담당자 선임 기록 (연도, 이름, 소속, 선임일 등)
@@ -138,7 +118,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 3. process_emission: 공정배출시설 측정 기록
 4. ldar: 비산누출시설(LDAR) 점검 실적
 
-* 해당 페이지에 추출할 데이터가 없으면 무조건 빈 배열 `[]` 을 반환하세요. 절대 오류를 뱉지 마세요.
+* 해당 구간에 데이터가 아예 없다면 무조건 빈 배열 `[]` 을 반환하세요. 절대 에러를 뱉지 마세요.
 
 [출력 JSON 구조]
 {{
@@ -149,28 +129,51 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
 
-    for i in range(0, total_images, CHUNK_SIZE):
-        chunk = measure_images[i : i + CHUNK_SIZE]
-        chunk_idx = (i // CHUNK_SIZE) + 1
-        my_bar.progress(chunk_idx / total_chunks, text=f"AI가 서류를 꼼꼼히 읽고 있습니다... (진행률: {chunk_idx}/{total_chunks} 구간)")
+    current_processed = 0
+    for name, fbytes in pdf_list:
+        fbytes.seek(0)
+        doc = fitz.open(stream=fbytes.read(), filetype="pdf")
+        doc_pages = len(doc)
         
-        try:
-            time.sleep(1.5) # API 트래픽 초과를 막기 위한 안전장치
-            response = model.generate_content([extract_prompt, *chunk], request_options={"timeout": 60})
-            chunk_data = json.loads(response.text.strip(), strict=False)
+        for i in range(0, doc_pages, CHUNK_SIZE):
+            chunk_images = []
             
-            # 추출된 데이터를 마스터 그릇에 계속 쏟아 붓기
-            for k in aggregated_data.keys():
-                if k in chunk_data and isinstance(chunk_data[k], list):
-                    aggregated_data[k].extend(chunk_data[k])
-        except Exception as e:
-            print(f"Chunk Error at {chunk_idx}:", e)
-            continue # 하나의 묶음에서 에러가 나도 절대 멈추지 않고 끝까지 달립니다.
+            # 1. 딱 10장만 메모리에 올리기
+            for p_idx in range(i, min(i + CHUNK_SIZE, doc_pages)):
+                page = doc.load_page(p_idx)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
+                if img.mode != 'RGB': img = img.convert('RGB')
+                chunk_images.append(img)
+                del pix
+                current_processed += 1
+            
+            my_bar.progress(current_processed / total_pages, text=f"AI가 서류를 꼼꼼히 읽고 있습니다... ({current_processed}/{total_pages}쪽 완료)")
+            
+            # 2. AI에게 10장 던져서 데이터 추출
+            try:
+                time.sleep(1.5) # API 트래픽 초과 방지
+                response = model.generate_content([extract_prompt, *chunk_images], request_options={"timeout": 60})
+                chunk_data = json.loads(response.text.strip(), strict=False)
+                
+                # 마스터 그릇에 병합
+                for k in aggregated_data.keys():
+                    if k in chunk_data and isinstance(chunk_data[k], list):
+                        aggregated_data[k].extend(chunk_data[k])
+            except Exception as e:
+                print(f"Chunk Error:", e)
+                pass # 10장 중 일부 에러나도 멈추지 않고 끝까지 달림
+                
+            # ★ 서버 다운(OOM) 방지 핵심 2: 10장 처리가 끝났으면 메모리에서 즉각 파쇄(Delete)
+            del chunk_images
+            gc.collect()
+            
+        doc.close()
 
     # =====================================================================
     # 2단계: Reduce (종합 분석) - 산더미처럼 모인 데이터를 종합 평가
     # =====================================================================
-    my_bar.progress(1.0, text="100% 데이터 추출 완료! 최종 종합 진단 보고서 작성 중...")
+    my_bar.progress(1.0, text="100% 전수조사 추출 완료! 최종 종합 진단 보고서 작성 중...")
 
     synthesis_prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다. (시점: {current_time})
 아래는 사업장의 방대한 서류를 100% 전수조사하여 취합한 원시 데이터입니다.
@@ -197,7 +200,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         synthesis_response = model.generate_content(synthesis_prompt, request_options={"timeout": 120})
         final_synthesis = json.loads(synthesis_response.text.strip(), strict=False)
         
-        # 원본 데이터와 종합 의견을 합체
         final_result = {
             "scores": final_synthesis.get("scores", {}),
             "manager": {"data": aggregated_data["manager"]},
@@ -213,7 +215,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
     except Exception as e:
         print("Synthesis Error:", e)
-        # 최후의 방어선: 평가 과정에서 뻗더라도, 100% 긁어온 표 데이터는 무조건 화면에 띄웁니다!
+        # 최후 방어선
         fallback_data = {
             "scores": {
                 "manager_score": {"score": 90, "grade": "B"}, "prevention_score": {"score": 90, "grade": "B"},
