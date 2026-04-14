@@ -45,7 +45,7 @@ def get_air_status_o3(val):
 def get_env_office(address: str) -> str:
     if not address: return "-"
     ENV_OFFICE_MAP = {
-        "충남": "금강유역환경청",  "세종": "금강유역환경청", "대전": "금강유역환경청",  "충북": "금강유역환경청", "전북": "전북지방환경청",
+        "충남": "금강유역환경청",  "세종": "금강유역환경청", "대전": "금강유역환경청",  "충북": "금강유역환경청", "전북": "전북지방환경청", "전주": "전북지방환경청",
         "광주": "영산강유역환경청", "전남": "영산강유역환경청", "제주": "영산강유역환경청",
         "경북": "대구지방환경청", "대구": "대구지방환경청",
         "경남": "낙동강유역환경청", "부산": "낙동강유역환경청", "울산": "낙동강유역환경청",
@@ -77,32 +77,40 @@ def get_limit_ppm(industry: str) -> str:
 def get_air_quality(station_name: str, api_key: str):
     if not api_key or not station_name: return None
     
-    # ★ API Key 이중 인코딩 방지를 위해 주소에 직접 삽입
-    url = f"http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?serviceKey={api_key}"
-    params = {"returnType": "json", "numOfRows": "1", "pageNo": "1", "stationName": station_name, "dataTerm": "DAILY", "ver": "1.0"}
+    # ★ 이중 인코딩 방지를 위해 파라미터를 requests에 안전하게 분리
+    url = "http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty"
+    params = {
+        "serviceKey": unquote(api_key), 
+        "returnType": "json", 
+        "numOfRows": "1", 
+        "pageNo": "1", 
+        "stationName": station_name, 
+        "dataTerm": "DAILY", 
+        "ver": "1.0"
+    }
     
     try:
         resp = requests.get(url, params=params, timeout=10)
         items = resp.json().get("response", {}).get("body", {}).get("items", [])
         if items and items[0].get("pm10Value") != "-": 
             return items[0]
-    except Exception: 
+    except Exception as e: 
+        print("API 통신 에러:", e)
         pass
     
-    # ★ 환경부 서버가 죽었거나 해당 측정소가 점검 중일 때 보고서가 깨지지 않도록 예비 데이터 송출
-    return {
-        "o3Value": "0.045", "pm10Value": "42", "pm25Value": "18", 
-        "no2Value": "0.015", "so2Value": "0.003", "coValue": "0.4",
-        "dataTime": "환경부 서버 응답 지연 (임시 데이터)"
-    }
+    # 실패 시 순수하게 None을 반환하여 빈칸('-') 처리
+    return None
 
 def generate_rich_advice(air_data: dict, target_station: str) -> str:
     def _f(v):
         try: return float(v) if v and str(v).replace(".", "").isdigit() else 0.0
         except Exception: return 0.0
 
-    pm10 = _f(air_data.get("pm10Value", 42)) if air_data else 42.0
-    o3   = _f(air_data.get("o3Value",  0.045)) if air_data else 0.045
+    if not air_data:
+        return "대기질 정보를 불러오지 못해 관리 지침을 생성할 수 없습니다."
+
+    pm10 = _f(air_data.get("pm10Value", 0))
+    o3   = _f(air_data.get("o3Value", 0))
 
     if o3 >= 0.09:
         level = "[경보 단계 - 즉각 조치 및 비상 가동 가이드]"
