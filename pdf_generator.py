@@ -54,28 +54,34 @@ class ProfessionalPDF(FPDF):
         fn = self._fn()
         self.set_fill_color(*BRAND_LIGHT_BG)
         self.rect(0, 0, 210, 297, "F")
+
         self.set_fill_color(*BRAND_NAVY)
         self.rect(0, 0, 210, 26, "F")
         self.set_y(8)
         self.set_font(fn, "B", 10)
         self.set_text_color(220, 232, 248)
         self.cell(0, 8, "한국환경공단 비산배출 자가진단 시스템 (시범사업)  |  v105.1 Modular", 0, 1, "C")
+
         self.set_fill_color(*BRAND_ACCENT)
         self.rect(0, 26, 7, 271, "F")
+
         self.set_fill_color(255, 255, 255)
         self.set_draw_color(195, 212, 235)
         self.set_line_width(0.5)
         self.rect(16, 38, 178, 198, "FD")
+
         self.set_fill_color(*BRAND_ACCENT)
         self.rect(16, 38, 178, 15, "F")
         self.set_y(41)
         self.set_font(fn, "B", 14)
         self.set_text_color(255, 255, 255)
         self.cell(0, 9, "비산배출시설 정밀 자가진단 보고서", 0, 1, "C")
+
         self.set_y(56)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
         self.cell(0, 6, "HAPs 비산배출시설 환경관리 적합성 정밀 진단", 0, 1, "C")
+
         self.set_draw_color(*BRAND_ACCENT)
         self.set_line_width(0.35)
         self.line(24, 64, 194, 64)
@@ -119,6 +125,7 @@ class ProfessionalPDF(FPDF):
         self.set_font(fn, "B", 8)
         self.set_text_color(255, 255, 255)
         self.cell(0, 6, "AI 기반 환경관리 진단 시스템  |  Pilot Edition", 0, 0, "C")
+
         self.set_fill_color(228, 237, 250)
         self.rect(0, 256, 210, 41, "F")
         self.set_y(264)
@@ -130,6 +137,7 @@ class ProfessionalPDF(FPDF):
         fn = self._fn()
         self.set_fill_color(*BRAND_LIGHT_BG)
         self.rect(0, 0, 210, 297, "F")
+
         self.set_fill_color(*BRAND_NAVY)
         self.rect(0, 0, 210, 20, "F")
         self.set_y(5)
@@ -193,9 +201,11 @@ class ProfessionalPDF(FPDF):
         self.set_line_width(0.2)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
+        
         for i, h in enumerate(headers):
             self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln()
+
         self.set_font(fn, "", 8.5)
         self.set_text_color(35, 45, 60)
         alt = False
@@ -215,6 +225,7 @@ class ProfessionalPDF(FPDF):
             for i, val in enumerate(row):
                 cell_val = str(val)
                 disp_val = self.get_truncated_text(cell_val, col_widths[i])
+
                 if highlight_last_col and i == len(row) - 1:
                     if "부적합" in cell_val or "불량" in cell_val:
                         self.set_text_color(*SCORE_COLORS["F"]); self.set_font(fn, "B", 8.5)
@@ -228,6 +239,7 @@ class ProfessionalPDF(FPDF):
                         self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
                 else:
                     self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
+                
                 self.cell(col_widths[i], row_h, disp_val, border="B", align="C", fill=True)
             self.ln()
             alt = not alt
@@ -239,12 +251,14 @@ class ProfessionalPDF(FPDF):
         self.set_line_width(0.2)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
+        
         for i, h in enumerate(headers):
             self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln()
 
         self.set_font(fn, "", 8.5)
         self.set_text_color(35, 45, 60)
+        
         if not rows:
             self.set_fill_color(*BRAND_LIGHT_BG)
             self.cell(sum(col_widths), 7, "추출된 데이터가 없습니다.", border="B", align="C", fill=True)
@@ -257,6 +271,7 @@ class ProfessionalPDF(FPDF):
         for row in rows:
             self.check_page_break(8)
             group_val = str(row[group_col_idx])
+            
             if current_group is None:
                 current_group = group_val
             elif current_group != group_val:
@@ -270,6 +285,7 @@ class ProfessionalPDF(FPDF):
             for i, val in enumerate(row):
                 cell_val = str(val)
                 disp_val = self.get_truncated_text(cell_val, col_widths[i])
+
                 if highlight_last_col and i == len(row) - 1:
                     if "부적합" in cell_val or "불량" in cell_val:
                         self.set_text_color(*SCORE_COLORS["F"]); self.set_font(fn, "B", 8.5)
@@ -279,6 +295,7 @@ class ProfessionalPDF(FPDF):
                         self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
                 else:
                     self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
+                
                 self.cell(col_widths[i], row_h, disp_val, border="B", align="C", fill=True)
             self.ln()
 
@@ -313,13 +330,16 @@ class ProfessionalPDF(FPDF):
             self.set_line_width(0.25)
             self.rect(cx, start_y, card_w, card_h, "FD")
             self.set_fill_color(r, g, b); self.rect(cx, start_y, 4, card_h, "F")
+
             self.set_font(fn, "B", 8); self.set_text_color(*BRAND_NAVY)
             self.set_xy(cx + 7, start_y + 3)
             self.cell(card_w - 40, 5, label, 0, 0, "L")
+
             badge_x = cx + card_w - 30; badge_y = start_y + 2
             self.set_fill_color(lr, lg, lb); self.rect(badge_x, badge_y, 26, 8, "F")
             self.set_font(fn, "B", 8); self.set_text_color(dr, dg, db)
             self.set_xy(badge_x, badge_y + 1); self.cell(26, 6, status, 0, 0, "C")
+
             self.set_font(fn, "B", 12); self.set_text_color(r, g, b)
             self.set_xy(cx + 7, start_y + 10); self.cell(card_w - 14, 9, value, 0, 0, "L")
 
@@ -361,12 +381,15 @@ class ProfessionalPDF(FPDF):
             self.set_line_width(0.35)
             self.rect(cx, cy, card_w, card_h, "FD")
             self.set_fill_color(r, g, b); self.rect(cx, cy, 3, card_h, "F")
+
             bx = cx + card_w - 10; by = cy + 2
             self.set_fill_color(lr, lg, lb); self.rect(bx, by, 8, 8, "F")
             self.set_font(fn, "B", 7); self.set_text_color(dr, dg, db)
             self.set_xy(bx, by + 1); self.cell(8, 6, grade, 0, 0, "C")
+
             self.set_font(fn, "", 7); self.set_text_color(110, 122, 145)
             self.set_xy(cx + 4, cy + 3); self.cell(card_w - 14, 5, label, 0, 0, "L")
+
             self.set_font(fn, "B", 17); self.set_text_color(r, g, b)
             self.set_xy(cx + 4, cy + 8); self.cell(card_w - 8, 13, str(score), 0, 0, "C")
 
@@ -384,10 +407,13 @@ class ProfessionalPDF(FPDF):
         self.set_fill_color(tlr, tlg, tlb); self.set_draw_color(tr, tg, tb)
         self.set_line_width(0.5)
         self.rect(total_cx, start_y, total_w, card_h, "FD")
+
         self.set_font(fn, "B", 8); self.set_text_color(tdr, tdg, tdb)
         self.set_xy(total_cx, start_y + 3); self.cell(total_w, 6, "종 합 등 급", 0, 1, "C")
+
         self.set_font(fn, "B", 22); self.set_text_color(tdr, tdg, tdb)
         self.set_xy(total_cx, start_y + 8); self.cell(total_w, 14, grade_total, 0, 1, "C")
+
         self.set_font(fn, "", 8); self.set_text_color(90, 100, 115)
         self.set_xy(total_cx, start_y + 23); self.cell(total_w, 5, f"총점 {total}점", 0, 0, "C")
         self.ln(card_h + 2)
@@ -461,6 +487,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf._reg_fonts()
     pdf.set_auto_page_break(auto=True, margin=15)
 
+    # 안전한 딕셔너리 값 추출
     company_name = user_info.get("name", user_info.get("company", "-"))
     address_str  = user_info.get("addr", user_info.get("address", "-"))
     industry_str = user_info.get("industry", "-")
@@ -476,6 +503,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_sub_header("1) 기본 정보 요약표")
 
     env_office = get_env_office(address_str)
+    
     data_time = air_data.get("dataTime", datetime.now().strftime("%Y-%m-%d %H:00")) if air_data else datetime.now().strftime("%Y-%m-%d %H:00")
 
     overview_rows = [
