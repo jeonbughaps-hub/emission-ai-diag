@@ -15,8 +15,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 KB_DIRECTORY = "knowledge_base/"
 
 def get_model(): 
-    # ★ 개발자님 제안 적용: 현존 최고 성능의 Gemini 2.0 Pro 모델 탑재!
-    # (API 환경에 따라 "gemini-2.0-pro" 또는 "gemini-2.0-pro-exp" 사용)
+    # ★ Gemini 2.0 Pro 모델 탑재! (정밀 데이터 추출)
     return genai.GenerativeModel(
         "gemini-2.0-pro-exp", 
         generation_config={
@@ -95,9 +94,20 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     # 1단계: Map (Gemini 2.0 Pro의 강력한 비전 인식으로 10장씩 정밀 스캔)
     # =====================================================================
     aggregated_data = {"manager": [], "prevention": [], "process_emission": [], "ldar": []}
-    CHUNK_SIZE = 10 # 2.0 Pro는 컨텍스트 이해력이 뛰어나 10장씩 주어도 완벽히 소화합니다.
+    CHUNK_SIZE = 10 
     
-    total_pages = sum([len(fitz.open(stream=f.read(), filetype="pdf")) for _, f in (fbytes.seek(0) or [(n, fbytes)]) for n, fbytes in pdf_list])
+    # ★ 에러 수정 부분: 페이지 수를 안전하고 정확하게 계산하는 반복문으로 변경
+    total_pages = 0
+    for name, fbytes in pdf_list:
+        try:
+            fbytes.seek(0)
+            doc = fitz.open(stream=fbytes.read(), filetype="pdf")
+            total_pages += len(doc)
+            doc.close()
+        except Exception as e:
+            print(f"Error reading {name} for page count: {e}")
+            pass
+
     if total_pages == 0: return {"parsed": {}, "raw": ""}
 
     st.info(f"🚀 [Gemini 2.0 Pro 가동] 총 {total_pages}장의 서류를 최고 성능 AI 모델로 정밀 해독합니다. 진짜 데이터만 100% 추출합니다.")
