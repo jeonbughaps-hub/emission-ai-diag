@@ -89,13 +89,33 @@ def get_limit_ppm(industry: str) -> str:
 
 def get_air_quality(station_name: str, api_key: str):
     if not api_key or not station_name: return None
-    url = "http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty"
-    params = {"serviceKey": unquote(api_key), "returnType": "json", "numOfRows": "1", "pageNo": "1", "stationName": station_name, "dataTerm": "DAILY", "ver": "1.0"}
+    
+    # ★ 핵심 수정: 파이썬 requests가 키를 이중으로 암호화하는 것을 방지하기 위해 URL에 직접 키를 결합합니다.
+    url = f"http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?serviceKey={api_key}"
+    params = {
+        "returnType": "json", 
+        "numOfRows": "1", 
+        "pageNo": "1", 
+        "stationName": station_name, 
+        "dataTerm": "DAILY", 
+        "ver": "1.0"
+    }
+    
     try:
         resp = requests.get(url, params=params, timeout=8)
-        items = resp.json().get("response", {}).get("body", {}).get("items", [])
-        if items: return items[0]
-    except Exception: pass
+        data = resp.json()
+        
+        # 에어코리아 정상 응답 구조 확인
+        items = data.get("response", {}).get("body", {}).get("items", [])
+        if items: 
+            return items[0]
+        else:
+            # API 키 오류이거나 측정소 이름이 잘못되었을 경우 콘솔(Manage app)에 이유를 찍어줍니다.
+            print(f"[API 데이터 없음] 측정소: {station_name}, 응답메시지: {data}")
+    except Exception as e:
+        print(f"[API 통신 실패] {e}")
+        pass
+    
     return None
 
 def generate_rich_advice(air_data: dict, target_station: str) -> str:
