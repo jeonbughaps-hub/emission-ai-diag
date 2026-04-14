@@ -54,34 +54,28 @@ class ProfessionalPDF(FPDF):
         fn = self._fn()
         self.set_fill_color(*BRAND_LIGHT_BG)
         self.rect(0, 0, 210, 297, "F")
-
         self.set_fill_color(*BRAND_NAVY)
         self.rect(0, 0, 210, 26, "F")
         self.set_y(8)
         self.set_font(fn, "B", 10)
         self.set_text_color(220, 232, 248)
         self.cell(0, 8, "한국환경공단 비산배출 자가진단 시스템 (시범사업)  |  v105.1 Modular", 0, 1, "C")
-
         self.set_fill_color(*BRAND_ACCENT)
         self.rect(0, 26, 7, 271, "F")
-
         self.set_fill_color(255, 255, 255)
         self.set_draw_color(195, 212, 235)
         self.set_line_width(0.5)
         self.rect(16, 38, 178, 198, "FD")
-
         self.set_fill_color(*BRAND_ACCENT)
         self.rect(16, 38, 178, 15, "F")
         self.set_y(41)
         self.set_font(fn, "B", 14)
         self.set_text_color(255, 255, 255)
         self.cell(0, 9, "비산배출시설 정밀 자가진단 보고서", 0, 1, "C")
-
         self.set_y(56)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
         self.cell(0, 6, "HAPs 비산배출시설 환경관리 적합성 정밀 진단", 0, 1, "C")
-
         self.set_draw_color(*BRAND_ACCENT)
         self.set_line_width(0.35)
         self.line(24, 64, 194, 64)
@@ -125,7 +119,6 @@ class ProfessionalPDF(FPDF):
         self.set_font(fn, "B", 8)
         self.set_text_color(255, 255, 255)
         self.cell(0, 6, "AI 기반 환경관리 진단 시스템  |  Pilot Edition", 0, 0, "C")
-
         self.set_fill_color(228, 237, 250)
         self.rect(0, 256, 210, 41, "F")
         self.set_y(264)
@@ -137,7 +130,6 @@ class ProfessionalPDF(FPDF):
         fn = self._fn()
         self.set_fill_color(*BRAND_LIGHT_BG)
         self.rect(0, 0, 210, 297, "F")
-
         self.set_fill_color(*BRAND_NAVY)
         self.rect(0, 0, 210, 20, "F")
         self.set_y(5)
@@ -201,11 +193,9 @@ class ProfessionalPDF(FPDF):
         self.set_line_width(0.2)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
-        
         for i, h in enumerate(headers):
             self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln()
-
         self.set_font(fn, "", 8.5)
         self.set_text_color(35, 45, 60)
         alt = False
@@ -225,7 +215,6 @@ class ProfessionalPDF(FPDF):
             for i, val in enumerate(row):
                 cell_val = str(val)
                 disp_val = self.get_truncated_text(cell_val, col_widths[i])
-
                 if highlight_last_col and i == len(row) - 1:
                     if "부적합" in cell_val or "불량" in cell_val:
                         self.set_text_color(*SCORE_COLORS["F"]); self.set_font(fn, "B", 8.5)
@@ -239,7 +228,6 @@ class ProfessionalPDF(FPDF):
                         self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
                 else:
                     self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
-                
                 self.cell(col_widths[i], row_h, disp_val, border="B", align="C", fill=True)
             self.ln()
             alt = not alt
@@ -251,14 +239,12 @@ class ProfessionalPDF(FPDF):
         self.set_line_width(0.2)
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
-        
         for i, h in enumerate(headers):
             self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln()
 
         self.set_font(fn, "", 8.5)
         self.set_text_color(35, 45, 60)
-        
         if not rows:
             self.set_fill_color(*BRAND_LIGHT_BG)
             self.cell(sum(col_widths), 7, "추출된 데이터가 없습니다.", border="B", align="C", fill=True)
@@ -271,7 +257,6 @@ class ProfessionalPDF(FPDF):
         for row in rows:
             self.check_page_break(8)
             group_val = str(row[group_col_idx])
-            
             if current_group is None:
                 current_group = group_val
             elif current_group != group_val:
@@ -285,7 +270,6 @@ class ProfessionalPDF(FPDF):
             for i, val in enumerate(row):
                 cell_val = str(val)
                 disp_val = self.get_truncated_text(cell_val, col_widths[i])
-
                 if highlight_last_col and i == len(row) - 1:
                     if "부적합" in cell_val or "불량" in cell_val:
                         self.set_text_color(*SCORE_COLORS["F"]); self.set_font(fn, "B", 8.5)
@@ -295,7 +279,6 @@ class ProfessionalPDF(FPDF):
                         self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
                 else:
                     self.set_text_color(35, 45, 60); self.set_font(fn, "", 8.5)
-                
                 self.cell(col_widths[i], row_h, disp_val, border="B", align="C", fill=True)
             self.ln()
 
@@ -330,16 +313,13 @@ class ProfessionalPDF(FPDF):
             self.set_line_width(0.25)
             self.rect(cx, start_y, card_w, card_h, "FD")
             self.set_fill_color(r, g, b); self.rect(cx, start_y, 4, card_h, "F")
-
             self.set_font(fn, "B", 8); self.set_text_color(*BRAND_NAVY)
             self.set_xy(cx + 7, start_y + 3)
             self.cell(card_w - 40, 5, label, 0, 0, "L")
-
             badge_x = cx + card_w - 30; badge_y = start_y + 2
             self.set_fill_color(lr, lg, lb); self.rect(badge_x, badge_y, 26, 8, "F")
             self.set_font(fn, "B", 8); self.set_text_color(dr, dg, db)
             self.set_xy(badge_x, badge_y + 1); self.cell(26, 6, status, 0, 0, "C")
-
             self.set_font(fn, "B", 12); self.set_text_color(r, g, b)
             self.set_xy(cx + 7, start_y + 10); self.cell(card_w - 14, 9, value, 0, 0, "L")
 
@@ -381,15 +361,12 @@ class ProfessionalPDF(FPDF):
             self.set_line_width(0.35)
             self.rect(cx, cy, card_w, card_h, "FD")
             self.set_fill_color(r, g, b); self.rect(cx, cy, 3, card_h, "F")
-
             bx = cx + card_w - 10; by = cy + 2
             self.set_fill_color(lr, lg, lb); self.rect(bx, by, 8, 8, "F")
             self.set_font(fn, "B", 7); self.set_text_color(dr, dg, db)
             self.set_xy(bx, by + 1); self.cell(8, 6, grade, 0, 0, "C")
-
             self.set_font(fn, "", 7); self.set_text_color(110, 122, 145)
             self.set_xy(cx + 4, cy + 3); self.cell(card_w - 14, 5, label, 0, 0, "L")
-
             self.set_font(fn, "B", 17); self.set_text_color(r, g, b)
             self.set_xy(cx + 4, cy + 8); self.cell(card_w - 8, 13, str(score), 0, 0, "C")
 
@@ -407,13 +384,10 @@ class ProfessionalPDF(FPDF):
         self.set_fill_color(tlr, tlg, tlb); self.set_draw_color(tr, tg, tb)
         self.set_line_width(0.5)
         self.rect(total_cx, start_y, total_w, card_h, "FD")
-
         self.set_font(fn, "B", 8); self.set_text_color(tdr, tdg, tdb)
         self.set_xy(total_cx, start_y + 3); self.cell(total_w, 6, "종 합 등 급", 0, 1, "C")
-
         self.set_font(fn, "B", 22); self.set_text_color(tdr, tdg, tdb)
         self.set_xy(total_cx, start_y + 8); self.cell(total_w, 14, grade_total, 0, 1, "C")
-
         self.set_font(fn, "", 8); self.set_text_color(90, 100, 115)
         self.set_xy(total_cx, start_y + 23); self.cell(total_w, 5, f"총점 {total}점", 0, 0, "C")
         self.ln(card_h + 2)
@@ -446,7 +420,6 @@ class ProfessionalPDF(FPDF):
                 self.set_x(x + 8); self.multi_cell(w - 8, 6.5, line)
         self.ln(2)
 
-# ★ 5개의 인자를 정확히 받도록 서명 수정 및 KeyError 방지
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일")
     data    = ai_data.get("parsed", {})
@@ -480,6 +453,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ("마. 위험도 매트릭스 및 행정처분 가능성", "4"),
         ("바. AI 종합 진단 및 중장기 개선 권고",   "5"),
         ("사. 관련 규제 및 행정처분 참고사항",     "5"),
+        ("아. 비산배출시설 변경신고 및 추진체계",   "6"),
         ("자. 자가 체크리스트 (점검표)",           "6"),
     ])
 
@@ -487,7 +461,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf._reg_fonts()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    # 안전한 딕셔너리 값 추출 (app.py 구조와 매핑)
     company_name = user_info.get("name", user_info.get("company", "-"))
     address_str  = user_info.get("addr", user_info.get("address", "-"))
     industry_str = user_info.get("industry", "-")
@@ -503,8 +476,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_sub_header("1) 기본 정보 요약표")
 
     env_office = get_env_office(address_str)
-    
-    # ★ 안전한 데이터 타임 가져오기 (공공데이터)
     data_time = air_data.get("dataTime", datetime.now().strftime("%Y-%m-%d %H:00")) if air_data else datetime.now().strftime("%Y-%m-%d %H:00")
 
     overview_rows = [
@@ -537,7 +508,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     so2  = air_data.get("so2Value",  "-") if air_data else "-"
     co   = air_data.get("coValue",   "-") if air_data else "-"
 
-    # ★ 측정소 이름이 반영된 제목
     pdf.draw_sub_header(f"1) 주요 대기질 상태 인포그래픽 (관할: {station_name} 측정소, 기준: {data_time})")
     pdf.draw_aq_status_cards(o3, pm10)
 
@@ -613,51 +583,95 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_zebra_table(["단계/기간", "주요 개선 조치", "기대 효과"], [[r.get("phase","-"), r.get("action","-"), r.get("expected_effect","-")] for r in roadmap], [38, 92, 60])
 
     pdf.draw_sub_header("2) AI 정밀 진단 종합 의견")
-    op = data.get("overall_opinion", "AI 분석 내용을 가져오지 못했습니다.")
+    op = data.get("overall_opinion", "데이터를 분석 중이거나 결과가 충분하지 않습니다.")
     pdf.draw_text_box(op)
 
-   # ---------------------------------------------------------
-    # 사. 관련 규제 및 행정처분 참고사항 (텍스트 표 대신 이미지 고정 삽입)
+    # ---------------------------------------------------------
+    # 사. 관련 규제 및 행정처분 참고사항 (Native Draw)
     # ---------------------------------------------------------
     pdf.add_page()
     pdf.draw_section_header("사. 관련 규제 및 행정처분 참고사항")
     pdf.ln(5)
-    
-    # 1. 행정처분 규정 표 이미지 삽입
-    fn = pdf._fn()
-    try:
-        # x=10(좌측 여백), w=190(용지 폭에 맞춤)
-        pdf.image("assets/penalty_table.png", x=10, w=190)
-    except Exception:
-        pdf.set_font(fn, "", 10); pdf.set_text_color(200, 0, 0)
-        pdf.draw_text_box("[이미지 로드 실패: assets/penalty_table.png 파일을 확인하세요]")
-    
-    pdf.ln(15)
+
+    pdf.draw_sub_header("1) 벌칙 및 과태료 규정")
+    law_rows = [
+        ["[벌칙] 시설개선 조치명령 미이행자", "5년 이하 징역 또는 5천만원 이하 벌금"],
+        ["[벌칙] 비산배출시설 미신고 설치·운영자", "300만원 이하 벌금"],
+        ["[벌칙] 정기점검을 받지 아니한 자", "300만원 이하 벌금"],
+        ["[과태료] 변경신고를 하지 아니한 자", "200만원 이하 과태료"],
+    ]
+    pdf.draw_zebra_table(["위반 대상", "벌칙 및 과태료 내용"], law_rows, [110, 80])
+    pdf.ln(5)
+
+    pdf.draw_sub_header("2) 위반 횟수별 가중 행정처분 기준")
+    admin_rows = [
+        ["신고 또는 변경신고 미이행", "경고", "경고", "조업정지 10일", "조업정지 20일"],
+        ["시설관리기준 미준수", "경고", "조업정지 10일", "조업정지 20일", "조업정지 20일"],
+        ["정기점검 미수검", "경고", "경고", "조업정지 10일", "조업정지 20일"],
+        ["조치명령 미이행", "조업정지 10일", "조업정지 20일", "조업정지 30일", "조업정지 30일"],
+    ]
+    pdf.draw_zebra_table(["위반 사항", "1차 처분", "2차 처분", "3차 처분", "4차 처분"], admin_rows, [70, 30, 30, 30, 30])
+    pdf.ln(10)
 
     # ---------------------------------------------------------
-    # 아. 비산배출시설 변경신고 및 추진체계 (새로 추가된 항목)
+    # 아. 비산배출시설 변경신고 및 추진체계 (Native Draw)
     # ---------------------------------------------------------
     pdf.draw_section_header("아. 비산배출시설 변경신고 및 추진체계")
     pdf.ln(5)
-    
-    # 2. 변경신고 이미지 삽입
-    try:
-        pdf.image("assets/change_report.jpg", x=10, w=190)
-    except Exception:
-        pdf.draw_text_box("[이미지 로드 실패: assets/change_report.jpg]")
-        
-    pdf.ln(10)
-    
-    # 3. 추진체계 이미지 삽입
-    try:
-        pdf.image("assets/system_flow.jpg", x=10, w=190)
-    except Exception:
-        pdf.draw_text_box("[이미지 로드 실패: assets/system_flow.jpg]")
 
-    pdf.ln(10)
+    pdf.draw_sub_header("1) 비산배출시설 의무 변경신고 사유")
+    change_text = (
+        "※ 비산배출시설을 신고한 사업자는 다음의 사유 발생 시 반드시 변경신고를 해야 합니다.\n\n"
+        "  1. 사업장 명칭 또는 대표자를 변경하는 경우\n"
+        "  2. 비산배출시설 관리계획을 변경하는 경우\n"
+        "  3. 비산배출시설을 임대하는 경우\n"
+        "  4. 비산배출시설을 증설, 교체 또는 일부 폐쇄하는 경우\n"
+        "  5. 신고서의 오기, 누락 등 변경사유가 분명한 경우\n"
+        "  6. 비산배출시설을 완전히 폐쇄하는 경우"
+    )
+    pdf.draw_text_box(change_text)
+    pdf.ln(5)
+
+    pdf.draw_sub_header("2) 비산배출 저감제도 주요 추진체계")
+    pdf.check_page_break(65)
+    start_y = pdf.get_y()
+    fn = pdf._fn()
+    
+    pdf.set_fill_color(*BRAND_LIGHT_BG)
+    pdf.set_draw_color(*BRAND_ACCENT)
+    pdf.set_line_width(0.3)
+
+    pdf.set_xy(15, start_y)
+    pdf.rect(15, start_y, 85, 25, "DF")
+    pdf.set_font(fn, "B", 10); pdf.set_text_color(*BRAND_NAVY)
+    pdf.set_xy(15, start_y + 3); pdf.cell(85, 6, "■ 기후에너지환경부", 0, 1, "C")
+    pdf.set_font(fn, "", 9); pdf.set_text_color(50, 50, 50)
+    pdf.set_xy(15, start_y + 11); pdf.multi_cell(85, 5, "• HAPs 비산배출 저감제도 총괄", align="C")
+
+    pdf.set_xy(105, start_y)
+    pdf.rect(105, start_y, 90, 25, "DF")
+    pdf.set_font(fn, "B", 10); pdf.set_text_color(*BRAND_NAVY)
+    pdf.set_xy(105, start_y + 3); pdf.cell(90, 6, "■ 관할 환경청", 0, 1, "C")
+    pdf.set_font(fn, "", 9); pdf.set_text_color(50, 50, 50)
+    pdf.set_xy(105, start_y + 11); pdf.multi_cell(90, 5, "• 최초·변경신고 및 점검보고서 수리\n• 사업장 관리감독 및 수시점검", align="C")
+
+    pdf.set_xy(15, start_y + 28)
+    pdf.rect(15, start_y + 28, 85, 25, "DF")
+    pdf.set_font(fn, "B", 10); pdf.set_text_color(*BRAND_NAVY)
+    pdf.set_xy(15, start_y + 31); pdf.cell(85, 6, "■ 한국환경공단", 0, 1, "C")
+    pdf.set_font(fn, "", 9); pdf.set_text_color(50, 50, 50)
+    pdf.set_xy(15, start_y + 39); pdf.multi_cell(85, 5, "• 비산배출시설 정기점검 수행\n• 사업장 기술지원", align="C")
+
+    pdf.set_xy(105, start_y + 28)
+    pdf.rect(105, start_y + 28, 90, 25, "DF")
+    pdf.set_font(fn, "B", 10); pdf.set_text_color(*BRAND_NAVY)
+    pdf.set_xy(105, start_y + 31); pdf.cell(90, 6, "■ 진단 대상 사업장", 0, 1, "C")
+    pdf.set_font(fn, "", 9); pdf.set_text_color(50, 50, 50)
+    pdf.set_xy(105, start_y + 39); pdf.multi_cell(90, 5, "• 시설 신고 및 관리기준 준수\n• 3년 주기 정기점검 수검", align="C")
+    pdf.set_y(start_y + 58)
 
     # ---------------------------------------------------------
-    # 자. 자가 체크리스트 (정기 점검표) - 기존 '아'에서 '자'로 변경
+    # 자. 자가 체크리스트 (정기 점검표)
     # ---------------------------------------------------------
     pdf.add_page()
     pdf.draw_section_header("자. 자가 체크리스트 (정기 점검표)")
