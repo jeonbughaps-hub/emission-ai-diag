@@ -7,7 +7,7 @@ from utils import FONT_FILE_NAME, FONT_BOLD_NAME, BRAND_NAVY, BRAND_ACCENT, BRAN
 class ProfessionalPDF(FPDF):
     def __init__(self, toc_data=None):
         super().__init__()
-        self._toc     = toc_data or []
+        self._toc      = toc_data or []
         self._section = ""
         self.page_break_trigger = 265 
 
@@ -446,7 +446,8 @@ class ProfessionalPDF(FPDF):
                 self.set_x(x + 8); self.multi_cell(w - 8, 6.5, line)
         self.ln(2)
 
-def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str, map_coord: tuple) -> bytes:
+# ★ 5개의 인자를 정확히 받도록 수정 완료 (map_coord 제거)
+def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일")
     data    = ai_data.get("parsed", {})
     scores  = data.get("scores", {})
@@ -458,7 +459,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ("가. 사업장 및 진단 개요",                "1"),
         ("  - 1) 기본 정보 요약표",               "1"),
         ("나. 준수율 종합 스코어카드",             "1"),
-        ("  - 1) 항목별 점수 및 등급",            "1"),
+        ("  - 1) 항목별 점수 및 등급",             "1"),
         ("다. 공공데이터 기반 지역 환경 분석",     "2"),
         ("  - 1) 주요 대기질 상태 인포그래픽",     "2"),
         ("  - 2) 실시간 대기질 현황",             "2"),
@@ -497,7 +498,9 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_sub_header("1) 기본 정보 요약표")
 
     env_office = get_env_office(user_info["address"])
-    data_time = air_data.get("dataTime", datetime.now().strftime("%Y-%m-%d %H:00"))
+    
+    # ★ 안전한 데이터 타임 가져오기
+    data_time = air_data.get("dataTime", datetime.now().strftime("%Y-%m-%d %H:00")) if air_data else datetime.now().strftime("%Y-%m-%d %H:00")
 
     overview_rows = [
         ["사업장명",        user_info["company"],                  "사업자등록번호", user_info.get("biz_no", "-")],
@@ -529,7 +532,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     so2  = air_data.get("so2Value",  "-") if air_data else "-"
     co   = air_data.get("coValue",   "-") if air_data else "-"
 
-    pdf.draw_sub_header(f"1) 주요 대기질 상태 인포그래픽 (기준: {data_time})")
+    # ★ 측정소 이름이 반영된 제목
+    pdf.draw_sub_header(f"1) 주요 대기질 상태 인포그래픽 (관할: {station_name} 측정소, 기준: {data_time})")
     pdf.draw_aq_status_cards(o3, pm10)
 
     pdf.draw_sub_header("2) 실시간 대기질 현황 (관할 측정소 전체)")
@@ -544,7 +548,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_zebra_table(["오염물질", "현재 농도", "상태", "대기환경 기준", "사업장 연관성"], aq_rows, [30, 22, 15, 28, 95])
 
     pdf.draw_sub_header("3) 전문가 제언 및 환경관리 지침")
-    pdf.draw_text_box(air_advice)
+    pdf.draw_text_box(air_advice if air_advice else "대기질 정보를 불러오지 못했습니다.")
 
     pdf.draw_section_header("라. 시설별 정밀 진단 내역 (전수 조사)")
 
@@ -615,6 +619,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.ln(5)
     
     # 1. 행정처분 규정 표 이미지 삽입
+    fn = pdf._fn()
     try:
         # x=10(좌측 여백), w=190(용지 폭에 맞춤)
         pdf.image("assets/penalty_table.png", x=10, w=190)
@@ -664,7 +669,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_zebra_table(["확인", "점검 주기", "점검 항목"], [["□", period, content] for period, content in checklist], [15, 25, 150])
     pdf.ln(4)
 
-    fn = pdf._fn()
     pdf.set_font(fn, "B", 9); pdf.set_text_color(*BRAND_NAVY)
     pdf.cell(0, 7, "■ 점검 확인 서명란", 0, 1, "L"); pdf.ln(1)
     
