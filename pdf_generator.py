@@ -44,7 +44,7 @@ class ProfessionalPDF(FPDF):
         fn = self._fn()
         self.set_fill_color(*BRAND_LIGHT_BG); self.rect(0, 0, 210, 297, "F")
         self.set_fill_color(*BRAND_NAVY); self.rect(0, 0, 210, 26, "F")
-        self.set_y(8); self.set_font(fn, "B", 10); self.set_text_color(220, 232, 248); self.cell(0, 8, "한국환경공단 비산배출 자가진단 시스템 (시범사업)  |  v105.1 Modular", 0, 1, "C")
+        self.set_y(8); self.set_font(fn, "B", 10); self.set_text_color(220, 232, 248); self.cell(0, 8, "한국환경공단 비산배출 자가진단 시스템 (시범사업)  |  Professional", 0, 1, "C")
         self.set_fill_color(*BRAND_ACCENT); self.rect(0, 26, 7, 271, "F")
         self.set_fill_color(255, 255, 255); self.set_draw_color(195, 212, 235); self.set_line_width(0.5); self.rect(16, 38, 178, 198, "FD")
         self.set_fill_color(*BRAND_ACCENT); self.rect(16, 38, 178, 15, "F")
@@ -57,65 +57,85 @@ class ProfessionalPDF(FPDF):
             self.set_font(fn, "", 9); self.set_text_color(30, 40, 60); self.cell(130, row_h - 1, " " + str(v), 0, 0, "L", fill=True)
         self.set_fill_color(*BRAND_ACCENT); self.rect(0, 248, 210, 8, "F")
 
-    def draw_toc(self, toc_data): # 🚨 변수명 수정: toc_items -> toc_data
+    def draw_toc(self, toc_items):
         fn = self._fn(); self.set_fill_color(*BRAND_LIGHT_BG); self.rect(0, 0, 210, 297, "F")
-        self.set_fill_color(*BRAND_NAVY); self.rect(0, 0, 210, 20, "F")
-        self.set_y(5); self.set_font(fn, "B", 12); self.set_text_color(220, 232, 248); self.cell(0, 10, "목    차  (Table of Contents)", 0, 1, "C"); self.ln(4)
-        for title, page in toc_data:
-            is_sub = title.startswith("  "); self.set_x(22 if is_sub else 15); self.set_font(fn, "" if is_sub else "B", 9 if is_sub else 11); self.set_text_color(*(80, 95, 115) if is_sub else BRAND_NAVY)
-            self.cell(150, 7, title.strip()); self.cell(20, 7, str(page), 0, 1, "R")
+        self.set_y(25); self.set_font(fn, "B", 14); self.set_text_color(*BRAND_NAVY); self.cell(0, 10, "목    차", 0, 1, "C"); self.ln(10)
+        for title, page in toc_items:
+            self.set_x(30); self.set_font(fn, "B" if not title.startswith("  ") else "", 10)
+            self.cell(140, 8, title); self.cell(10, 8, str(page), 0, 1, "R")
 
     def draw_section_header(self, txt, set_section=True):
-        fn = self._fn(); self.check_page_break(25); self.ln(2)
+        fn = self._fn(); self.check_page_break(25); self.ln(5)
         if set_section: self._section = txt
-        self.set_fill_color(*BRAND_ACCENT); self.rect(10, self.get_y(), 4, 11, "F")
-        self.set_font(fn, "B", 13); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 11, txt, 0, 1, "L")
-        self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2)
+        self.set_fill_color(*BRAND_ACCENT); self.rect(10, self.get_y(), 4, 10, "F")
+        self.set_font(fn, "B", 12); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 10, txt, 0, 1, "L")
+        self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(3)
 
     def draw_sub_header(self, txt):
         fn = self._fn(); self.check_page_break(15); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_ACCENT); self.set_x(12); self.cell(0, 8, txt, 0, 1, "L")
 
     def draw_zebra_table(self, headers, rows, col_widths):
-        fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(175, 195, 220); self.set_line_width(0.2); self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
-        for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
-        self.ln(); self.set_font(fn, "", 8.5); self.set_text_color(35, 45, 60); alt = False
+        fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(180, 190, 210); self.set_line_width(0.2)
+        self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
+        for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
+        self.ln(); self.set_font(fn, "", 8.5); self.set_text_color(40, 40, 40); alt = False
         for row in rows:
             self.check_page_break(8); self.set_fill_color(*(BRAND_LIGHT_BG if alt else (255, 255, 255)))
-            for i, val in enumerate(row): self.cell(col_widths[i], 7, str(val), border="B", align="C", fill=True)
+            for i, val in enumerate(row):
+                self.cell(col_widths[i], 7, str(val), border=1, align="C", fill=True)
             self.ln(); alt = not alt
 
     def draw_scorecard(self, scores_data: dict):
-        fn = self._fn(); self.check_page_break(40); start_y = self.get_y()
-        self.set_fill_color(250, 251, 254); self.set_draw_color(210, 220, 238); self.set_line_width(0.35); self.rect(10, start_y, 190, 32, "FD")
-        self.set_xy(15, start_y + 4); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 6, "항목별 진단 결과 요약")
+        fn = self._fn(); self.check_page_break(45); start_y = self.get_y()
+        self.set_fill_color(245, 248, 253); self.rect(10, start_y, 190, 35, "F")
+        self.set_xy(15, start_y + 5); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 6, "항목별 진단 결과 및 종합 등급")
         grade = scores_data.get("overall_score", {}).get("grade", "F")
-        self.set_font(fn, "B", 24); self.set_text_color(*SCORE_COLORS.get(grade, (100,100,100))); self.set_xy(160, start_y + 8); self.cell(30, 15, grade, 0, 0, "C")
+        self.set_font(fn, "B", 26); self.set_text_color(*SCORE_COLORS.get(grade, (0,0,0))); self.set_xy(160, start_y + 8); self.cell(30, 20, grade, 0, 0, "C")
 
     def draw_text_box(self, text: str, title: str = ""):
-        fn = self._fn(); w = 185; self.check_page_break(25)
-        if title: self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 8, title, 0, 1, "L")
+        fn = self._fn(); w = 185; self.check_page_break(30)
+        if title: 
+            self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.ln(2)
+            self.cell(0, 8, title, 0, 1, "L")
+        
+        # 줄글 처리 로직 (소제목 굵게)
         for line in text.split("\n"):
             line = line.strip()
             if not line: continue
             if re.match(r"^【.*】", line):
-                self.check_page_break(15); self.ln(3); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY)
-                self.multi_cell(w, 6, line); self.set_font(fn, "", 9.5); self.set_text_color(50, 50, 50)
+                self.check_page_break(20); self.ln(4)
+                self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY)
+                self.multi_cell(w, 7, line)
+                self.set_font(fn, "", 9.5); self.set_text_color(50, 50, 50)
             else:
                 self.multi_cell(w, 6, "  " + line)
 
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일"); data = ai_data.get("parsed", {}); scores = data.get("scores", {})
-    # 목차 데이터
-    toc_data = [("가. 사업장 및 진단 개요", "1"), ("나. 준수율 종합 스코어카드", "1"), ("다. 지역 환경 분석", "2"), ("라. 시설별 정밀 진단 내역", "3"), ("바. AI 정밀 진단 종합 의견", "4")]
-    pdf = ProfessionalPDF(toc_data=toc_data); pdf._reg_fonts(); pdf.set_auto_page_break(auto=True, margin=15)
+    toc_list = [("가. 사업장 및 진단 개요", "1"), ("나. 준수율 종합 스코어카드", "1"), ("다. 지역 환경 분석", "2"), ("라. 시설별 정밀 진단 내역", "3"), ("바. AI 정밀 진단 종합 의견", "4")]
+    pdf = ProfessionalPDF(toc_data=toc_list); pdf._reg_fonts(); pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # 1. 커버 및 목차
     pdf.add_page(); pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), "-", now_str)
-    pdf.add_page(); pdf.draw_toc(toc_data)
+    pdf.add_page(); pdf.draw_toc(toc_list)
+    
+    # 2. 사업장 개요 및 스코어카드
     pdf.add_page(); pdf.draw_section_header("가. 사업장 및 진단 개요")
-    pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [32, 63, 32, 63])
+    pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [35, 60, 35, 60])
     pdf.draw_section_header("나. 준수율 종합 스코어카드"); pdf.draw_scorecard(scores)
-    pdf.add_page(); pdf.draw_section_header("다. 지역 환경 분석"); pdf.draw_text_box(air_advice, title=f"관할 측정소: {station_name}")
-    pdf.add_page(); pdf.draw_section_header("라. 시설별 정밀 진단 내역"); pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
+    
+    # 3. 대기질 분석
+    pdf.add_page(); pdf.draw_section_header("다. 지역 환경 분석")
+    pdf.draw_text_box(air_advice, title=f"관할 측정소: {station_name}")
+    
+    # 4. 정밀 진단 내역 (전수조사)
+    pdf.add_page(); pdf.draw_section_header("라. 시설별 정밀 진단 내역")
+    pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
     prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
-    pdf.draw_zebra_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 60, 25, 25, 30])
-    pdf.add_page(); pdf.draw_section_header("바. AI 정밀 진단 종합 의견"); pdf.draw_text_box(data.get("overall_opinion", "-"))
+    pdf.draw_zebra_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 65, 20, 25, 25])
+    
+    # 5. 종합 의견
+    pdf.add_page(); pdf.draw_section_header("바. AI 정밀 진단 종합 의견")
+    pdf.draw_text_box(data.get("overall_opinion", "-"))
+    
     return bytes(pdf.output())
