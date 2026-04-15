@@ -13,8 +13,6 @@ import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-KB_DIRECTORY = "knowledge_base/"
-
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
     if not uploaded_files: return pdf_list
@@ -24,13 +22,9 @@ def extract_pdfs_from_source(uploaded_files):
             pdf_list.append((uf.name, uf))
     return pdf_list
 
-@st.cache_resource(show_spinner="시스템 초기화 중...")
-def build_vector_db(uploaded_files=None, location_key="default"):
-    return None
-
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 이미지 변환 및 극한 압축 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
@@ -41,10 +35,7 @@ def convert_and_mask_images(pdf_list):
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
                 del pix
-                if i % 5 == 0 or i == len(doc)-1:
-                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 스캔 중... ({i+1}/{len(doc)}장)")
             doc.close()
-            fbytes.seek(0)
         except Exception: continue
     gc.collect()
     my_bar.empty()
@@ -56,41 +47,44 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     client = genai.Client(api_key=api_key)
     
-    # ★ Ⅲ/Ⅳ업종 기준 100ppm 반영 로직
+    # Ⅲ/Ⅳ업종 기준 100ppm 반영
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
-        limit_text = "100ppm"
         limit_val = 100
+        limit_text = "100ppm"
     else:
-        limit_text = "50ppm"
         limit_val = 50
+        limit_text = "50ppm"
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    prompt = f"""당신은 환경부 비산배출시설 전문 진단 엔진입니다. (시점: {current_time})
+    prompt = f"""당신은 환경부 비산배출시설 정밀 진단 시스템의 핵심 AI 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[데이터 추출 및 보고서 매핑 규칙]
-1. 방지시설(prevention): 'accuracy_check' 필드에 "확인됨"을 반드시 기재하세요. 농도가 {limit_val}ppm 초과 시 "부적합", 이하 시 "적합"으로 판정하세요.
-2. 누출시설(ldar): 'recheck_done' 필드에 "이행완료"를 반드시 기재하세요. 문서의 요약표를 찾아 '총 점검 개소'와 '누출 건수' 합계를 추출하세요.
-3. 스코어(scores): 'reason' 필드에 등급 부여 근거를 20자 내외로 작성하세요.
+[진단 지시사항 - 풍부한 의견 중심]
+1. 데이터 추출: '방지시설 농도', 'LDAR 합계'를 정확히 추출하고, 기준치({limit_val}ppm) 초과 여부를 정밀 판정하세요.
+2. 종합 의견(overall_opinion) 생성: 
+   - 문장 도입부에 현재 사업장의 전반적인 관리 등급을 명시하세요.
+   - 방지시설의 THC 농도 추이가 기준 이내인지, 혹은 특정 시설에서 왜 농도가 높게 나왔는지(이미지 분석 근거) 상세히 설명하세요.
+   - LDAR 누출률과 재측정 이행 상태를 평가하고, 다음 정기점검 시 주의해야 할 행정처분 위험 요소를 구체적으로(예: 3년 주기 정기점검 대비 등) 500자 이상 풍부하게 작성하세요.
+3. 로드맵: 단기(~3개월) 및 중장기(~1년) 개선 조치를 사업장의 실정에 맞게 구체화하세요.
 
-[출력 JSON 구조]
+[출력 JSON 구조 - pdf_generator 연동용]
 {{
   "scores": {{ 
-    "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 적정"}}, 
-    "prevention_score": {{"score":95, "grade":"A", "reason":"배출농도 준수 양호"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 완료"}}, 
-    "record_score": {{"score":90, "grade":"B", "reason":"기록 관리 충실"}}, 
+    "manager_score": {{"score":100, "grade":"A", "reason":"선임 및 교육 이수 확인"}}, 
+    "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 상태 양호"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"전수 점검 및 누출 0건"}}, 
+    "record_score": {{"score":90, "grade":"B", "reason":"운영기록부 서식 보완 필요"}}, 
     "overall_score": {{"score":96, "grade":"A"}} 
   }},
   "manager": {{ "data": [ {{"period": "2022", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "수치", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
   "process_emission": {{ "data": [] }},
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "총수", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
-  "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
-  "overall_opinion": "전문가 종합 의견..."
+  "risk_matrix": [ {{"item": "시설 노후화", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
+  "improvement_roadmap": [ {{"phase": "단기(~3M)", "action": "방지시설 활성탄 교체", "expected_effect": "배출 농도 안정화"}} ],
+  "overall_opinion": "여기에 환경 전문가 수준의 풍부한 진단 의견을 작성하세요."
 }}
 """
     try:
@@ -99,17 +93,15 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.0,
+                temperature=0.2, # 의견 풍부화를 위해 약간의 창의성 허용
                 safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
             )
         )
         raw_text = response.text.strip()
-        
-        # 디버그용 출력
-        with st.expander("🛠️ AI 추출 원본 데이터 확인"):
-            st.code(raw_text, language="json")
-
         parsed_data = json.loads(re.search(r'\{.*\}', raw_text, re.DOTALL).group(0), strict=False)
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
         return {"parsed": {}, "raw": str(e)}
+
+def build_vector_db(uploaded_files=None, location_key="default"):
+    return None
