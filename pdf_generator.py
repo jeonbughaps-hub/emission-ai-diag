@@ -15,11 +15,12 @@ class ProfessionalPDF(FPDF):
         return "Nanum" if os.path.exists(FONT_FILE_NAME) else "Arial"
 
     def _reg_fonts(self):
-        if os.path.exists(FONT_FILE_NAME):
+        fn = self._fn()
+        if fn == "Nanum":
             self.add_font("Nanum", "", FONT_FILE_NAME)
             bold_src = FONT_BOLD_NAME if os.path.exists(FONT_BOLD_NAME) else FONT_FILE_NAME
             self.add_font("Nanum", "B", bold_src)
-        return self._fn()
+        return fn
 
     def check_page_break(self, required_height):
         if self.get_y() + required_height > self.page_break_trigger:
@@ -62,7 +63,7 @@ class ProfessionalPDF(FPDF):
         self.set_y(5); self.set_font(fn, "B", 12); self.set_text_color(220, 232, 248); self.cell(0, 10, "목    차  (Table of Contents)", 0, 1, "C"); self.ln(4)
         for title, page in toc_items:
             is_sub = title.startswith("  "); self.set_x(22 if is_sub else 15); self.set_font(fn, "" if is_sub else "B", 9 if is_sub else 11); self.set_text_color(*(80, 95, 115) if is_sub else BRAND_NAVY)
-            self.cell(150, 7, title.strip()); self.cell(20, 7, page, 0, 1, "R")
+            self.cell(150, 7, title.strip()); self.cell(20, 7, str(page), 0, 1, "R")
 
     def draw_section_header(self, txt, set_section=True):
         fn = self._fn(); self.check_page_break(25); self.ln(2)
@@ -71,7 +72,7 @@ class ProfessionalPDF(FPDF):
         self.set_font(fn, "B", 13); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 11, txt, 0, 1, "L")
         self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2)
 
-    def draw_zebra_table(self, headers, rows, col_widths, highlight_last_col=False):
+    def draw_zebra_table(self, headers, rows, col_widths):
         fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(175, 195, 220); self.set_line_width(0.2); self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
         for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln(); self.set_font(fn, "", 8.5); self.set_text_color(35, 45, 60); alt = False
@@ -110,6 +111,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_section_header("나. 준수율 종합 스코어카드"); pdf.draw_scorecard(scores)
     pdf.add_page(); pdf.draw_section_header("다. 지역 환경 분석"); pdf.draw_text_box(air_advice, title=f"관할 측정소: {station_name}")
     pdf.add_page(); pdf.draw_section_header("라. 시설별 정밀 진단 내역")
+    pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
     prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
     pdf.draw_zebra_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 60, 25, 25, 30])
     pdf.add_page(); pdf.draw_section_header("바. AI 정밀 진단 종합 의견"); pdf.draw_text_box(data.get("overall_opinion", "-"))
