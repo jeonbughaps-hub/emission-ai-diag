@@ -4,6 +4,7 @@ import google.generativeai as genai
 from PIL import Image
 import io
 import json
+import re
 import streamlit as st
 from datetime import datetime
 import gc 
@@ -14,8 +15,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 KB_DIRECTORY = "knowledge_base/"
 
 def get_model(): 
-    # 4/13일 당시 성공적으로 사용했던 분석 모델
-    return genai.GenerativeModel("gemini-2.0-flash")
+    # 유료 계정이시므로 가장 똑똑한 1.5-pro를 씁니다!
+    return genai.GenerativeModel("gemini-1.5-pro")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -26,52 +27,13 @@ def extract_pdfs_from_source(uploaded_files):
             pdf_list.append((uf.name, uf))
     return pdf_list
 
-@st.cache_resource(show_spinner="서버 법령 지식베이스 로딩 중...")
+@st.cache_resource(show_spinner="시스템 초기화 중...")
 def build_vector_db(uploaded_files=None, location_key="default"):
-    # ★ 에러 방어벽: RAG 구축 중 에러가 나도 스트림릿 앱이 죽지 않도록 감쌉니다!
-    try:
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from langchain_core.vectorstores import InMemoryVectorStore
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-        all_texts = ""
-        if os.path.exists(KB_DIRECTORY):
-            for filename in os.listdir(KB_DIRECTORY):
-                if filename.lower().endswith(".pdf"):
-                    path = os.path.join(KB_DIRECTORY, filename)
-                    try:
-                        doc = fitz.open(path)
-                        for page in doc:
-                            all_texts += page.get_text() + "\n"
-                        doc.close()
-                    except Exception: continue
-                    
-        if not all_texts.strip():
-            return None
-            
-        api_key = os.environ.get("GOOGLE_API_KEY")
-        if not api_key: return None
-        
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        docs = text_splitter.create_documents([all_texts])
-        
-        # ★ 4/13 오리지널 임베딩 모델로 복구 (에러 원천 차단)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-        
-        # 구글 무료 API의 1회 전송량 초과를 막기 위해 배치(Batch) 사이즈를 10으로 아주 잘게 쪼갭니다.
-        vector_db = InMemoryVectorStore.from_documents(docs[:10], embeddings)
-        for i in range(10, len(docs), 10):
-            vector_db.add_documents(docs[i:i+10])
-            
-        return vector_db
-    except Exception as e:
-        # 에러가 나면 앱을 터뜨리지 않고, RAG 없이 분석하도록 None을 반환합니다.
-        print(f"지식베이스 구축 에러 (앱은 정상 작동합니다): {e}")
-        return None
+    return None # 원활한 메인 테스트를 위해 일단 비활성화
 
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 이미지 변환 및 압축 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 이미지 변환 및 압축 중 (메모리 최적화)...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
@@ -85,10 +47,10 @@ def convert_and_mask_images(pdf_list):
                 del pix
                 
                 if i % 5 == 0 or i == len(doc)-1:
-                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 4/13 오리지널 로직으로 스캔 중... ({i+1}/{len(doc)}장)")
+                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 이미지 추출 중... ({i+1}/{len(doc)}장)")
             doc.close()
             fbytes.seek(0)
-        except Exception as e: 
+        except Exception as e:
             print("Image conversion error:", e)
             continue
     gc.collect()
@@ -100,28 +62,17 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     if not api_key or not measure_images: 
         return {"parsed": {}, "raw": ""}
         
-    # 구형 라이브러리 설정 원상복구
+    # 4/13 성공 당시의 구형 라이브러리 초기화 방식
     genai.configure(api_key=api_key)
     from utils import get_limit_ppm
     model = get_model()
     limit_text = get_limit_ppm(user_industry)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
-    rag_context = ""
-    if vector_db:
-        try:
-            docs = vector_db.similarity_search(f"{user_industry} 시설관리기준", k=3)
-            rag_context = "\n".join([d.page_content for d in docs])
-        except Exception as e: 
-            print("RAG Error:", e)
 
-    my_bar = st.progress(0.5, text="🚀 AI가 4월 13일 오리지널 로직으로 정밀 분석 중입니다...")
+    my_bar = st.progress(0.5, text="🚀 AI가 수백 장의 이미지를 직접 정밀 판독 중입니다...")
 
     prompt = f"""당신은 환경부 비산배출시설 전문 진단 엔진입니다. (시점: {current_time})
 업종: {user_industry} | THC 기준: {limit_text}
-
-[관련 법령 및 지침 참고 (RAG 검색 결과)]
-{rag_context}
 
 [판정 논리 및 규칙]
 1. LDAR 점검 기록이나 방지시설 측정 기록이 수십 줄이 있더라도, 절대 개별 행을 나열하지 마세요. 전체 점검 개소(합계)와 누출(기준 초과) 건수만 파악하여 1줄로 '요약'하세요.
@@ -141,8 +92,22 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 """
     try:
         gc.collect()
-        # 4/13 성공 로직: File API 없이 이미지 리스트 통째로 인라인 전송
-        response = model.generate_content([prompt, *measure_images])
+        
+        # 구형 라이브러리용 안전 필터 해제 문법
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ]
+
+        # ★ 핵심: File API를 쓰지 않고, 이미지 데이터(measure_images)를 직접 요청에 태워서 보냅니다.
+        response = model.generate_content(
+            [prompt, *measure_images],
+            generation_config=genai.types.GenerationConfig(temperature=0.0, response_mime_type="application/json"),
+            safety_settings=safety_settings
+        )
+        
         raw_text = response.text
         start_idx = raw_text.find('{')
         end_idx = raw_text.rfind('}')
