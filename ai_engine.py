@@ -15,8 +15,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 KB_DIRECTORY = "knowledge_base/"
 
 def get_model(): 
-    # 유료 계정이시므로 가장 똑똑한 1.5-pro를 씁니다!
-    return genai.GenerativeModel("gemini-1.5-pro")
+    # ★ 개발자님 기억대로 Pro가 아닌 Flash 모델로 원상복구합니다!
+    return genai.GenerativeModel("gemini-2.0-flash")
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
