@@ -1,15 +1,13 @@
 import os
-import fitz
 from google import genai
 from google.genai import types
-from PIL import Image
-import io
 import json
 import re
 import streamlit as st
 from datetime import datetime
+import tempfile
+import time
 import warnings
-import gc
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -29,64 +27,67 @@ def build_vector_db(uploaded_files=None, location_key="default"):
     return None
 
 def convert_and_mask_images(pdf_list):
-    """
-    ★ 과거 가장 안정적이었던 '순수 이미지 변환' 방식으로 완전 복귀!
-    PDF를 이미지로 구워서 AI의 시각(Vision) 능력으로 바로 읽게 합니다.
-    """
-    all_images = []
-    if not pdf_list: return []
-    
-    my_bar = st.progress(0, text="PDF 문서를 AI 전송용 이미지로 변환 중입니다...")
-    
-    for idx, (name, fbytes) in enumerate(pdf_list):
-        try:
-            fbytes.seek(0)
-            doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            total_pages = len(doc)
-            
-            for i in range(total_pages):
-                page = doc.load_page(i)
-                # 폰트 깨짐 방지를 위한 1.5배율 이미지 캡처
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 85)))
-                if img.mode != 'RGB': img = img.convert('RGB')
-                all_images.append(img)
-                
-                del pix
-                gc.collect()
-                
-                if i % 5 == 0 or i == total_pages - 1:
-                    my_bar.progress((i+1) / total_pages, text=f"[{name}] 이미지 변환 중... ({i+1}/{total_pages}장)")
-            doc.close()
-        except Exception as e:
-            print("Convert Error:", e)
-            continue
-            
-    my_bar.empty()
-    return all_images
+    # Streamlit Cloud 서버 폭파(OOM)를 막기 위해 파이썬 이미지 변환 전면 폐기
+    return pdf_list 
 
-def analyze_log_compliance(measure_images, user_industry: str, vector_db):
+def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key or not measure_images: 
+    if not api_key or not pdf_list: 
         return {"parsed": {}, "raw": ""}
 
     client = genai.Client(api_key=api_key)
 
     from utils import get_limit_ppm
     limit_text = get_limit_ppm(user_industry)
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    my_bar = st.progress(0.1, text="원본 파일을 구글 서버로 직접 전송 중입니다... (서버 램 0% 사용)")
+    
+    gfiles = []
 
-    my_bar = st.progress(0.5, text="AI가 변환된 이미지 전체를 스캔하여 데이터를 추출 중입니다. (약 1분 소요)")
+    # =====================================================================
+    # ★ 핵심 로직: 원본 PDF 전체를 구글망으로 다이렉트 업로드
+    # (쪼개지 않은 통짜 파일을 올리셔야 AI가 완벽한 문맥을 파악합니다)
+    # =====================================================================
+    for name, uf in pdf_list:
+        try:
+            uf.seek(0)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(uf.read())
+                tmp_path = tmp.name
+                
+            my_bar.progress(0.3, text=f"[{name}] 구글 슈퍼컴퓨터로 업로드 중...")
+            gfile = client.files.upload(file=tmp_path, config={'display_name': name})
+            
+            wait_count = 0
+            while "PROCESSING" in str(gfile.state) and wait_count < 60:
+                time.sleep(2)
+                gfile = client.files.get(name=gfile.name)
+                wait_count += 1
+                
+            if "ACTIVE" in str(gfile.state):
+                gfiles.append(gfile)
+            os.remove(tmp_path)
+            
+        except Exception as e:
+            print("Upload Error:", e)
+            continue
 
-    prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다. (시점: {current_time})
-첨부된 운영기록부 이미지들을 꼼꼼히 스캔하여 아래 항목의 데이터를 JSON으로 추출하세요.
+    if not gfiles:
+        my_bar.empty()
+        return {"parsed": {}, "raw": "파일 전송 실패"}
+
+    my_bar.progress(0.6, text="🚀 AI가 전체 문맥(통짜 파일)을 파악하며 전수조사 중입니다...")
+
+    prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다.
+첨부된 문서는 사업장의 방대한 '연간점검보고서' 원본입니다. (여러 파일이 첨부되었다면 모든 내용을 하나로 이어붙여서 해석하세요.)
+
 업종 기준: {limit_text}
 
-[임무 및 규칙]
-1. LDAR 점검 기록이나 방지시설 측정 기록이 수십 줄이 있더라도, 절대 개별 행을 나열하지 마세요. 반드시 전체 점검 개소(합계)와 누출(기준 초과) 건수만 1줄로 '요약'해서 출력하세요.
-2. 마스킹되어 이름, 부서, 특정 농도 값을 알 수 없다면 절대 빈 배열( [] )을 만들지 마세요. "-" 또는 "확인불가"로 채워 넣으세요.
+[절대 규칙]
+1. LDAR 점검 기록이 수천 줄이 있더라도 절대 개별 행을 나열하지 마세요. 모든 페이지의 문맥을 파악해 '전체 점검 개소(총 개수)'와 '누출 건수'만 1줄로 요약하세요.
+2. 마스킹(검은칠)되어 내용이 안 보이면 "마스킹됨", "확인불가", "-" 등으로 무조건 빈칸을 채우세요. (절대 빈 배열 [] 반환 금지)
 
-[출력 JSON 구조]
+[출력 JSON 구조] (반드시 아래 형식을 유지하세요)
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "manager": {{ "data": [ {{"period": "연도", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
@@ -99,7 +100,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 화학물질 용어로 인한 AI 차단 방지 (안전 필터 해제)
+        # 화학물질 안전 필터 강제 해제 (차단 방지)
         safety_settings = [
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
@@ -107,7 +108,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
         ]
         
-        contents = [prompt] + measure_images
+        contents = [prompt] + gfiles
         
         response = client.models.generate_content(
             model='gemini-2.0-flash',
@@ -124,14 +125,15 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match:
-            try:
+            try: 
                 parsed_data = json.loads(match.group(0), strict=False)
             except Exception:
                 pass
 
-        # AI가 빈 배열을 반환했을 때 UI가 박살나는 것을 방지하는 최소한의 보호 로직
+        # 무적의 데이터 보호 로직
+        dummy_row = {"period": "-", "name": "확인불가", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}
+
         def ensure_data_format(val, key_name):
-            dummy_row = {"period": "-", "name": "확인불가", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}
             if isinstance(val, list):
                 if len(val) == 0 and key_name != "process_emission": return {"data": [dummy_row]}
                 return {"data": val}
@@ -157,7 +159,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
     except Exception as e:
         print("Analysis Error:", e)
-        st.error(f"데이터 분석 중 오류 발생: {e}")
+        st.error(f"🚨 오류 발생: {e}")
         fallback_data = {"scores": {}, "manager": {"data": []}, "prevention": {"data": []}, "process_emission": {"data": []}, "ldar": {"data": []}, "risk_matrix": [], "improvement_roadmap": [], "overall_opinion": str(e)}
         my_bar.empty()
         return {"parsed": fallback_data, "raw": str(e)}
+    finally:
+        for gf in gfiles:
+            try: client.files.delete(name=gf.name)
+            except: pass
