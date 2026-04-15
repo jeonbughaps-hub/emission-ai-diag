@@ -59,28 +59,35 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[진단 지시사항]
-1. 데이터 추출: 방지시설 농도와 LDAR 합계를 정확히 추출하세요. {limit_val}ppm 초과 시 "부적합" 판정.
-2. 종합 의견(overall_opinion) 작성: 
-   반드시 아래 4가지 소제목을 포함하여 전문가 톤으로 아주 풍부하게(800자 내외) 작성하세요. 
-   형식: 【1. 시설관리 종합 평가】, 【2. 방지시설 운영 효율 분석】, 【3. LDAR 점검 이행 상태】, 【4. 차기 정기점검 대비 관리 권고】
+[진단 데이터 추출]
+- 방지시설 농도 수치 및 LDAR 합계 데이터를 정확히 추출하세요. 
+- 농도가 {limit_val}ppm 초과 시 "부적합" 판정.
+
+[전문 종합 의견(overall_opinion) 작성 지침]
+반드시 아래 4가지 소제목을 포함하여 총 800자 내외로 상세히 작성하세요. 
+각 소제목은 반드시 '【숫자. 제목】' 형식을 사용하고, 가독성을 위해 문장 사이 줄바꿈을 적절히 하세요.
+
+【1. 시설관리 종합 평가】: 전반적인 등급(A~F) 근거와 사업장의 환경관리 수준 요약
+【2. 방지시설 운영 및 농도 분석】: 측정된 THC 수치와 기준치({limit_text}) 대비 안정성 상세 분석
+【3. LDAR 점검 및 누출 관리 현황】: 누출률 점검 이행 충실도 및 조치 적정성 평가
+【4. 차기 정기점검 대비 개선 제언】: 향후 기술진단 및 환경청 점검 대비 중점 관리 포인트
 
 [출력 JSON 구조]
 {{
   "scores": {{ 
-    "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 적정"}}, 
-    "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 양호"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 적정"}}, 
-    "record_score": {{"score":90, "grade":"B", "reason":"기록 관리 충실"}}, 
+    "manager_score": {{"score":100, "grade":"A", "reason":"관리자 선임 적정"}}, 
+    "prevention_score": {{"score":95, "grade":"A", "reason":"배출농도 기준 준수"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 양호"}}, 
+    "record_score": {{"score":90, "grade":"B", "reason":"운영기록 충실도 보통"}}, 
     "overall_score": {{"score":96, "grade":"A"}} 
   }},
-  "manager": {{ "data": [ {{"period": "2022", "name": "마스킹됨", "dept": "안전팀", "date": "선임일", "qualification": "자격"}} ] }},
+  "manager": {{ "data": [ {{"period": "2022", "name": "마스킹됨", "dept": "안전환경", "date": "선임일", "qualification": "자격"}} ] }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
   "process_emission": {{ "data": [] }},
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "총수", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
-  "overall_opinion": "여기에 소제목이 포함된 풍부한 의견을 작성하세요."
+  "overall_opinion": "여기에 위 지침에 따라 소제목을 포함한 전문가 의견을 작성하세요."
 }}
 """
     try:
