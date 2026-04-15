@@ -65,10 +65,18 @@ with col1:
                     
                     user_info = {
                         "name": user_name, "addr": user_addr, 
-                        "industry": user_industry, "office": get_env_office(user_addr)
+                        "industry": user_industry, "office": get_env_office(user_addr),
+                        "permit_no": "-", "biz_no": "-", "rep": "-"
                     }
-                    # ★ 인자 5개 정상 전달
-                    pdf_bytes = create_gov_report_pdf(result["parsed"], user_info, advice_text, air_data, st.session_state.target_station)
+                    
+                    # ★ 핵심 수정: result["parsed"]를 직접 보내지 않고, pdf_generator 구조에 맞춰 감싸서 전달
+                    pdf_bytes = create_gov_report_pdf(
+                        {"parsed": result["parsed"]}, 
+                        user_info, 
+                        advice_text, 
+                        air_data, 
+                        st.session_state.target_station
+                    )
                     
                     st.download_button(
                         "📄 정밀 진단 보고서 다운로드",
