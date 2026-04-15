@@ -44,10 +44,8 @@ def convert_and_mask_images(pdf_list):
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key or not measure_images: return {"parsed": {}, "raw": ""}
-        
     client = genai.Client(api_key=api_key)
     
-    # Ⅲ/Ⅳ업종 기준 100ppm 반영
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
         limit_val = 100
@@ -58,33 +56,38 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    prompt = f"""당신은 환경부 비산배출시설 정밀 진단 시스템의 핵심 AI 엔진입니다. (시점: {current_time})
-대상 업종: {user_industry} | 적용 배출기준: {limit_text}
+    prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
+대상 업종: {user_industry} | 배출기준: {limit_text}
 
-[진단 지시사항 - 풍부한 의견 중심]
-1. 데이터 추출: '방지시설 농도', 'LDAR 합계'를 정확히 추출하고, 기준치({limit_val}ppm) 초과 여부를 정밀 판정하세요.
-2. 종합 의견(overall_opinion) 생성: 
-   - 문장 도입부에 현재 사업장의 전반적인 관리 등급을 명시하세요.
-   - 방지시설의 THC 농도 추이가 기준 이내인지, 혹은 특정 시설에서 왜 농도가 높게 나왔는지(이미지 분석 근거) 상세히 설명하세요.
-   - LDAR 누출률과 재측정 이행 상태를 평가하고, 다음 정기점검 시 주의해야 할 행정처분 위험 요소를 구체적으로(예: 3년 주기 정기점검 대비 등) 500자 이상 풍부하게 작성하세요.
-3. 로드맵: 단기(~3개월) 및 중장기(~1년) 개선 조치를 사업장의 실정에 맞게 구체화하세요.
+[데이터 추출 지침]
+1. 방지시설 농도 판정: {limit_val}ppm 초과 시 "부적합", 이하 시 "적합" 판정.
+2. LDAR 요약: 문서 상의 총괄표를 찾아 '총 점검 개소'와 '누출 건수' 합계만 추출.
 
-[출력 JSON 구조 - pdf_generator 연동용]
+[종합 의견(overall_opinion) 작성 규칙 - 전문 리포트 스타일]
+반드시 아래 4가지 소제목을 포함하여 총 800자 내외로 상세히 작성하세요. 
+각 항목은 '【숫자. 항목명】' 형식을 사용하세요.
+
+【1. 시설관리 종합 평가】: 전반적인 관리 상태(A~F등급 기반)와 기준 준수율 요약.
+【2. 방지시설 운영 효율 분석】: 측정된 THC 농도 추이와 기준치({limit_text}) 대비 안정성 평가.
+【3. LDAR 및 누출 관리 현황】: 점검 이행의 충실도와 누출 발생 시 조치의 신속성 평가.
+【4. 차기 정기점검 대비 권고 사항】: 행정처분 리스크 방지를 위한 핵심 관리 포인트 제언.
+
+[출력 JSON 구조]
 {{
   "scores": {{ 
-    "manager_score": {{"score":100, "grade":"A", "reason":"선임 및 교육 이수 확인"}}, 
-    "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 상태 양호"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason":"전수 점검 및 누출 0건"}}, 
-    "record_score": {{"score":90, "grade":"B", "reason":"운영기록부 서식 보완 필요"}}, 
+    "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 적정"}}, 
+    "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 양호"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 완료"}}, 
+    "record_score": {{"score":90, "grade":"B", "reason":"기록 관리 충실"}}, 
     "overall_score": {{"score":96, "grade":"A"}} 
   }},
-  "manager": {{ "data": [ {{"period": "2022", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
+  "manager": {{ "data": [ {{"period": "2022", "name": "마스킹됨", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "수치", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
   "process_emission": {{ "data": [] }},
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "총수", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
-  "risk_matrix": [ {{"item": "시설 노후화", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기(~3M)", "action": "방지시설 활성탄 교체", "expected_effect": "배출 농도 안정화"}} ],
-  "overall_opinion": "여기에 환경 전문가 수준의 풍부한 진단 의견을 작성하세요."
+  "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
+  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
+  "overall_opinion": "여기에 위 지침에 따른 소제목형 의견을 작성하세요."
 }}
 """
     try:
@@ -93,7 +96,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.2, # 의견 풍부화를 위해 약간의 창의성 허용
+                temperature=0.1,
                 safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
             )
         )
