@@ -8,6 +8,12 @@ import streamlit as st
 from datetime import datetime
 import tempfile
 import time
+from PIL import Image
+import io
+import gc
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 KB_DIRECTORY = "knowledge_base/"
 
@@ -22,31 +28,31 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner="서버 법령 지식베이스 로딩 중...")
 def build_vector_db(uploaded_files=None, location_key="default"):
-    return None # 메모리 안정성을 위해 지식베이스 임시 비활성화
+    return None # 메모리 안정성을 위해 임시 비활성화
 
 def convert_and_mask_images(pdf_list):
-    return pdf_list # 평탄화 작업은 아래 메인 함수에서 안전하게 수행합니다.
+    return pdf_list
 
 def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key or not pdf_list: 
         return {"parsed": {}, "raw": ""}
 
-    # 최신 구글 SDK 가동
+    # 최신 SDK 가동
     client = genai.Client(api_key=api_key)
 
     from utils import get_limit_ppm
     limit_text = get_limit_ppm(user_industry)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    my_bar = st.progress(0.1, text="PDF 문서의 화질 복원 및 평탄화(Flattening) 작업 중입니다...")
+    my_bar = st.progress(0.1, text="PDF 문서의 화질 복원 및 안전한 평탄화(Flattening) 작업 중입니다...")
     
     gfiles = []
     total_pages = 0
 
     # =====================================================================
-    # ★ 핵심 기술: 마스킹으로 깨진 텍스트를 버리고, 고해상도 이미지로 찍어내어
-    # 새로운 '사진 PDF'로 재조립한 뒤 구글 서버로 전송합니다.
+    # ★ 에러 완벽 해결: Pillow(PIL)를 사용해 버전 충돌 없는 안전한 이미지 압축!
+    # 메모리 누수를 막기 위해 페이지마다 즉시 쓰레기통(gc.collect)을 비웁니다.
     # =====================================================================
     for name, uf in pdf_list:
         try:
@@ -54,27 +60,43 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
             doc = fitz.open(stream=uf.read(), filetype="pdf")
             total_pages += len(doc)
             
-            # 이미지만 담을 새 PDF 생성
-            img_pdf = fitz.open()
+            img_pdf = fitz.open() # 이미지만 담을 새 PDF
             
             for i in range(len(doc)):
                 page = doc.load_page(i)
-                # 황금 비율 1.5배수로 고해상도 캡처
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                img_pdf_page = img_pdf.new_page(width=page.rect.width, height=page.rect.height)
-                img_pdf_page.insert_image(img_pdf_page.rect, stream=pix.tobytes("jpeg", 85))
+                # OOM(메모리 터짐)을 방지하기 위한 최적의 해상도 1.2
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2))
+                
+                # 에러가 나던 tobytes 대신 가장 안전한 PIL 우회 방식 적용
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                if img.mode != 'RGB': 
+                    img = img.convert('RGB')
+                
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='JPEG', quality=85)
+                
+                # 새 PDF에 구워진 이미지 붙이기
+                new_page = img_pdf.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.insert_image(new_page.rect, stream=img_byte_arr.getvalue())
+                
+                # ★ 중요: 메모리 터짐 방지를 위한 즉각적인 자원 해제
+                del pix
+                del img
+                del img_byte_arr
+                gc.collect()
                 
                 if i % 5 == 0:
-                    my_bar.progress(0.1 + (0.3 * (i / len(doc))), text=f"[{name}] 고해상도 스캔본으로 재조립 중... ({i}/{len(doc)}쪽)")
+                    my_bar.progress(0.1 + (0.3 * (i / len(doc))), text=f"[{name}] 마스킹 문서 복원 중... ({i+1}/{len(doc)}쪽)")
+            
             doc.close()
             
-            # 재조립된 안전한 PDF를 구글 서버로 업로드
+            # 완성된 안전한 PDF 저장 및 업로드
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 img_pdf.save(tmp.name)
                 tmp_path = tmp.name
             img_pdf.close()
                 
-            my_bar.progress(0.4, text=f"[{name}] 구글 AI 비전 서버로 안전하게 전송 중...")
+            my_bar.progress(0.4, text=f"[{name}] 구글 AI 서버로 안전하게 전송 중...")
             gfile = client.files.upload(file=tmp_path, config={'display_name': name})
             
             wait_count = 0
@@ -86,6 +108,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
             if "ACTIVE" in str(gfile.state):
                 gfiles.append(gfile)
             os.remove(tmp_path)
+            
         except Exception as e:
             print("Flatten/Upload Error:", e)
             continue
@@ -104,7 +127,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
 LDAR 점검 기록이 수백 줄이 있더라도 개별 행을 전부 쓰지 마세요. 
 반드시 전체 점검 개소(합계)와 누출(기준 초과) 건수만 1줄로 '요약'해서 출력하세요.
 
-[출력 JSON 구조] (반드시 아래 구조를 준수하고, 마크다운 ```json 태그로 감싸세요)
+[출력 JSON 구조] (반드시 아래 구조를 준수하세요)
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "manager": {{ "data": [ {{"period": "연도", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
