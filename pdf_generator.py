@@ -103,11 +103,10 @@ class ProfessionalPDF(FPDF):
         if title: 
             self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 8, title, 0, 1, "L")
         
-        lines = text.split("\n")
-        for line in lines:
+        # 줄글 처리 로직 (소제목 굵게)
+        for line in text.split("\n"):
             line = line.strip()
             if not line: continue
-            # 소제목 패턴 감지 시 굵게 처리
             if re.match(r"^【.*】", line):
                 self.ln(2); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY)
                 self.multi_cell(w, 7, line)
@@ -122,8 +121,10 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf = ProfessionalPDF(toc_data=toc_items)
     pdf._reg_fonts()
     
-    # 1~2페이지
+    # 1페이지 (커버)
     pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), "-", now_str)
+    
+    # 2페이지 (목차)
     pdf.draw_toc(toc_items)
     
     # 3페이지 (가, 나)
@@ -144,7 +145,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
     pdf.draw_zebra_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 65, 20, 25, 25])
     
-    # 6페이지 (바 - 종합 의견은 양이 많으므로 아예 새 페이지에서 시작)
+    # 6페이지 (바 - 의견이 길어질 것에 대비해 새 페이지 할당)
     pdf.add_page()
     pdf.draw_section_header("바. AI 정밀 진단 종합 의견")
     pdf.draw_text_box(data.get("overall_opinion", "-"))
