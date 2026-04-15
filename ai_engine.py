@@ -89,7 +89,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     if not api_key or not measure_images: 
         return {"parsed": {}, "raw": ""}
         
-    # 구형 라이브러리 폐기 -> 최신 SDK 사용
     client = genai.Client(api_key=api_key)
     from utils import get_limit_ppm
     limit_text = get_limit_ppm(user_industry)
@@ -102,7 +101,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             rag_context = "\n".join([d.page_content for d in docs])
         except: pass
 
-    my_bar = st.progress(0.5, text="🚀 [Gemini-1.5-Pro] AI가 압축된 수백 장의 데이터를 정밀 해독 중입니다...")
+    my_bar = st.progress(0.5, text="🚀 [Gemini 2.0 Flash] AI가 압축된 수백 장의 데이터를 정밀 해독 중입니다...")
 
     prompt = f"""당신은 환경부 비산배출시설 전문 진단 엔진입니다. (시점: {current_time})
 업종: {user_industry} | THC 기준: {limit_text}
@@ -129,7 +128,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     try:
         gc.collect()
         
-        # ★ 침묵의 원인 차단: 모든 안전 필터 해제 (화학물질 인식 차단 방지)
+        # 화학물질 인식 오류(빈칸 반환)를 막기 위한 완벽한 필터 해제
         safety_settings = [
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
@@ -137,10 +136,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
         ]
 
-        # ★ 핵심: 클라우드 업로드(File API) 없이 이미지 리스트(PIL)를 직접 태워서 전송!
-        # 유료 계정의 400만 TPM 파워로 130MB 문서를 한 번에 씹어먹습니다.
+        # ★ 치명적 실수 수정 완료: gemini-2.0-flash 로 정상 호출!
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.0-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -172,6 +170,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         my_bar.empty()
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
-        st.error(f"🚨 분석 중 치명적 오류 발생: {e}")
+        st.error(f"🚨 분석 중 오류 발생: {e}")
         my_bar.empty()
         return {"parsed": {}, "raw": str(e)}
