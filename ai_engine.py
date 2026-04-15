@@ -38,7 +38,6 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     if not api_key or not pdf_list: 
         return {"parsed": {}, "raw": ""}
 
-    # 최신 SDK 가동
     client = genai.Client(api_key=api_key)
 
     from utils import get_limit_ppm
@@ -51,8 +50,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     total_pages = 0
 
     # =====================================================================
-    # ★ 에러 완벽 해결: Pillow(PIL)를 사용해 버전 충돌 없는 안전한 이미지 압축!
-    # 메모리 누수를 막기 위해 페이지마다 즉시 쓰레기통(gc.collect)을 비웁니다.
+    # 메모리 누수 없는 안전한 고해상도 평탄화 (마스킹 폰트 깨짐 방지)
     # =====================================================================
     for name, uf in pdf_list:
         try:
@@ -60,14 +58,12 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
             doc = fitz.open(stream=uf.read(), filetype="pdf")
             total_pages += len(doc)
             
-            img_pdf = fitz.open() # 이미지만 담을 새 PDF
+            img_pdf = fitz.open() 
             
             for i in range(len(doc)):
                 page = doc.load_page(i)
-                # OOM(메모리 터짐)을 방지하기 위한 최적의 해상도 1.2
                 pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2))
                 
-                # 에러가 나던 tobytes 대신 가장 안전한 PIL 우회 방식 적용
                 img = Image.open(io.BytesIO(pix.tobytes("png")))
                 if img.mode != 'RGB': 
                     img = img.convert('RGB')
@@ -75,11 +71,9 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
                 img_byte_arr = io.BytesIO()
                 img.save(img_byte_arr, format='JPEG', quality=85)
                 
-                # 새 PDF에 구워진 이미지 붙이기
                 new_page = img_pdf.new_page(width=page.rect.width, height=page.rect.height)
                 new_page.insert_image(new_page.rect, stream=img_byte_arr.getvalue())
                 
-                # ★ 중요: 메모리 터짐 방지를 위한 즉각적인 자원 해제
                 del pix
                 del img
                 del img_byte_arr
@@ -90,7 +84,6 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
             
             doc.close()
             
-            # 완성된 안전한 PDF 저장 및 업로드
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 img_pdf.save(tmp.name)
                 tmp_path = tmp.name
@@ -117,7 +110,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
         my_bar.empty()
         return {"parsed": {}, "raw": "파일 전송 실패"}
 
-    my_bar.progress(0.6, text=f"🚀 Gemini 2.0 Pro가 총 {total_pages}장의 스캔본을 정밀 해독 중입니다. (약 1분 소요)")
+    my_bar.progress(0.6, text=f"🚀 Gemini 1.5 Pro가 총 {total_pages}장의 스캔본을 정밀 해독 중입니다. (약 1분 소요)")
 
     prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다.
 첨부된 이미지 PDF를 정독하여 아래 데이터를 추출하세요.
@@ -141,8 +134,10 @@ LDAR 점검 기록이 수백 줄이 있더라도 개별 행을 전부 쓰지 마
 """
     try:
         contents = [prompt] + gfiles
+        
+        # ★ 가장 안정적이고 뛰어난 정식 모델 1.5 Pro 로 교체!
         response = client.models.generate_content(
-            model='gemini-2.0-pro-exp',
+            model='gemini-1.5-pro',
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
