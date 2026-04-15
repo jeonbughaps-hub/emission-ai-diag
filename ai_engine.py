@@ -1,4 +1,5 @@
 import os
+import fitz
 from google import genai
 from google.genai import types
 import json
@@ -7,6 +8,7 @@ import streamlit as st
 from datetime import datetime
 import tempfile
 import time
+import gc
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -24,10 +26,9 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner="서버 법령 지식베이스 로딩 중...")
 def build_vector_db(uploaded_files=None, location_key="default"):
-    return None # 메모리 보호를 위해 지식베이스 임시 비활성화
+    return None # 메모리 보호를 위해 임시 비활성화
 
 def convert_and_mask_images(pdf_list):
-    # 이미지 변환 로직 완전 폐기 (메모리 터짐 방지)
     return pdf_list
 
 def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
@@ -41,54 +42,67 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     limit_text = get_limit_ppm(user_industry)
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    my_bar = st.progress(0.1, text="서버 메모리 보호 모드 가동. 원본 파일을 구글 서버로 직배송 중입니다...")
+    my_bar = st.progress(0.1, text="[메모리 보호 모드] 문서를 한 장씩 정밀 스캔하여 전송합니다...")
     
     gfiles = []
+    total_pages = 0
 
     # =====================================================================
-    # ★ OOM(메모리 폭발) 완전 해결: 파이썬에서 파일을 열지 않고 원본 그대로 전송
+    # ★ OOM(메모리 폭발) & 폰트 깨짐 동시 해결! (단 한 장씩만 처리 후 메모리 삭제)
     # =====================================================================
     for name, uf in pdf_list:
         try:
             uf.seek(0)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(uf.read())
-                tmp_path = tmp.name
-                
-            my_bar.progress(0.3, text=f"[{name}] 구글 슈퍼컴퓨터로 안전하게 전송 중...")
+            doc = fitz.open(stream=uf.read(), filetype="pdf")
+            total_pages += len(doc)
             
-            # 구글 서버로 다이렉트 업로드 (최대 2GB까지 메모리 부하 없이 처리 가능)
-            gfile = client.files.upload(file=tmp_path, config={'display_name': name})
-            
-            wait_count = 0
-            while "PROCESSING" in str(gfile.state) and wait_count < 60:
-                time.sleep(2)
-                gfile = client.files.get(name=gfile.name)
-                wait_count += 1
+            for i in range(len(doc)):
+                page = doc.load_page(i)
+                # 시각 판독을 위한 고해상도(1.5배율) 캡처
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                jpeg_bytes = pix.tobytes("jpeg", 85)
                 
-            if "ACTIVE" in str(gfile.state):
+                # 램(RAM)에 모아두지 않고, 즉시 하드디스크 임시 파일로 저장
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    tmp.write(jpeg_bytes)
+                    tmp_path = tmp.name
+                
+                # ★ 핵심: 메모리가 쌓이지 않도록 1장 처리 후 즉시 파이썬 램 강제 청소!
+                del jpeg_bytes
+                del pix
+                del page
+                gc.collect() 
+                
+                # 생성된 사진을 구글 서버로 한 장씩 다이렉트 전송
+                gfile = client.files.upload(file=tmp_path, config={'display_name': f"{name}_{i+1}p"})
                 gfiles.append(gfile)
-            os.remove(tmp_path)
+                os.remove(tmp_path) # 전송 끝난 임시 파일 삭제
+                
+                # 진행률 UI 업데이트
+                if i % 3 == 0 or i == len(doc) - 1:
+                    my_bar.progress(0.1 + (0.4 * ((i+1) / len(doc))), text=f"[{name}] 초경량 스캔 및 구글 서버 직배송 중... ({i+1}/{len(doc)}쪽)")
+            
+            doc.close()
+            del doc
+            gc.collect()
             
         except Exception as e:
-            print("Upload Error:", e)
+            print("Page Scan/Upload Error:", e)
             continue
 
     if not gfiles:
         my_bar.empty()
         return {"parsed": {}, "raw": "파일 전송 실패"}
 
-    my_bar.progress(0.6, text=f"🚀 Gemini 2.0 Flash가 원본 서류를 정밀 해독 중입니다... (약 1분 소요)")
+    my_bar.progress(0.6, text=f"🚀 Gemini 2.0 Flash가 총 {total_pages}장의 시각(Vision) 데이터를 정밀 분석 중입니다...")
 
-    # 프롬프트: 마스킹 깨짐에 대비한 강력한 시각(Vision) 판독 지시 추가
     prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다.
-첨부된 문서는 텍스트 레이어가 깨져있을 수 있으므로, **반드시 눈으로 보는 것처럼 '시각(Vision)'을 이용해 표의 글자를 판독**하세요.
-
+첨부된 파일들은 보고서를 순서대로 스캔한 '사진'입니다. 텍스트가 깨져있을 수 있으므로 **반드시 눈으로 보는 것처럼 시각적(Vision)으로 표의 글자를 판독**하세요.
 업종 기준: {limit_text}
 
 [매우 중요한 절대 규칙]
-1. 문서에 내용이 부실해도 절대 빈 배열( [] )을 출력하지 마세요. 내용이 없으면 '-' 기호나 '확인불가'로 기재하여 무조건 표를 채우세요.
-2. LDAR 점검 기록은 수천 줄이 있더라도 절대 개별 행을 나열하지 마세요. 반드시 '전체 점검 개소(합계)'와 '누출(기준 초과) 건수'만 1줄로 '요약'해서 출력하세요.
+1. 문서에 완벽하게 일치하는 열(Column)이 없더라도, 빈 배열( [] )을 출력하지 말고 '-' 기호나 '확인불가'로라도 기재하여 무조건 데이터를 채우세요.
+2. LDAR 점검 기록은 수천 줄이 있더라도 절대 개별 행을 나열하지 마세요. 반드시 '전체 점검 개소(합계)'와 '누출(기준 초과) 건수'만 파악하여 **단 1줄로 요약**해서 출력하세요.
 
 [출력 JSON 구조] (반드시 아래 구조를 준수하세요)
 {{
@@ -105,7 +119,6 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
     try:
         contents = [prompt] + gfiles
         
-        # 404 에러가 없는 2.0-flash 모델 안정적 가동
         response = client.models.generate_content(
             model='gemini-2.0-flash',
             contents=contents,
@@ -126,16 +139,20 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
             except Exception:
                 pass
 
-        # 무적의 데이터 파싱 보호 로직 (AI가 형식을 틀려도 UI에 맞게 복원)
+        # 무적의 데이터 파싱 보호 로직 (AI가 형식을 틀려도 UI에 맞게 자동 복원)
         def ensure_data_format(val):
             if isinstance(val, list):
+                if len(val) == 0:
+                    return {"data": [{"period": "-", "name": "확인불가", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}]}
                 return {"data": val}
             elif isinstance(val, dict):
                 if "data" in val and isinstance(val["data"], list):
+                    if len(val["data"]) == 0:
+                         return {"data": [{"period": "-", "name": "확인불가", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}]}
                     return val
                 else:
                     return {"data": [val]}
-            return {"data": [{"period": "확인불가", "name": "-", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}]}
+            return {"data": [{"period": "-", "name": "확인불가", "dept": "-", "date": "-", "qualification": "-", "facility": "-", "value": "-", "limit": "-", "result": "-", "year": "-", "target_count": "-", "leak_count": "-", "leak_rate": "-"}]}
 
         for key in ["manager", "prevention", "process_emission", "ldar"]:
             parsed_data[key] = ensure_data_format(parsed_data.get(key))
@@ -157,6 +174,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
         my_bar.empty()
         return {"parsed": fallback_data, "raw": str(e)}
     finally:
+        # 구글 서버에 쌓인 낱장 이미지들 깔끔하게 청소
         for gf in gfiles:
             try: client.files.delete(name=gf.name)
             except: pass
