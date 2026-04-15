@@ -110,7 +110,7 @@ def analyze_log_compliance(pdf_list, user_industry: str, vector_db):
         my_bar.empty()
         return {"parsed": {}, "raw": "파일 전송 실패"}
 
-    my_bar.progress(0.6, text=f"🚀 Gemini 1.5 Pro가 총 {total_pages}장의 스캔본을 정밀 해독 중입니다. (약 1분 소요)")
+    my_bar.progress(0.6, text=f"🚀 가장 안정적인 Gemini 2.0 Flash 엔진이 스캔본을 정밀 해독 중입니다. (약 1분 소요)")
 
     prompt = f"""당신은 환경부 소속 '비산배출시설 기술진단 전문관'입니다.
 첨부된 이미지 PDF를 정독하여 아래 데이터를 추출하세요.
@@ -135,9 +135,9 @@ LDAR 점검 기록이 수백 줄이 있더라도 개별 행을 전부 쓰지 마
     try:
         contents = [prompt] + gfiles
         
-        # ★ 가장 안정적이고 뛰어난 정식 모델 1.5 Pro 로 교체!
+        # ★ 오류 없이 완벽하게 작동했던 2.0-flash 모델로 복귀!
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.0-flash',
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
