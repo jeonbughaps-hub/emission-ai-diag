@@ -57,37 +57,30 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
-대상 업종: {user_industry} | 배출기준: {limit_text}
+대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[데이터 추출 지침]
-1. 방지시설 농도 판정: {limit_val}ppm 초과 시 "부적합", 이하 시 "적합" 판정.
-2. LDAR 요약: 문서 상의 총괄표를 찾아 '총 점검 개소'와 '누출 건수' 합계만 추출.
-
-[종합 의견(overall_opinion) 작성 규칙 - 전문 리포트 스타일]
-반드시 아래 4가지 소제목을 포함하여 총 800자 내외로 상세히 작성하세요. 
-각 항목은 '【숫자. 항목명】' 형식을 사용하세요.
-
-【1. 시설관리 종합 평가】: 전반적인 관리 상태(A~F등급 기반)와 기준 준수율 요약.
-【2. 방지시설 운영 효율 분석】: 측정된 THC 농도 추이와 기준치({limit_text}) 대비 안정성 평가.
-【3. LDAR 및 누출 관리 현황】: 점검 이행의 충실도와 누출 발생 시 조치의 신속성 평가.
-【4. 차기 정기점검 대비 권고 사항】: 행정처분 리스크 방지를 위한 핵심 관리 포인트 제언.
+[진단 및 추출 지침]
+1. 데이터 추출: 방지시설 농도 수치를 정확히 추출하고 {limit_val}ppm 초과 시 "부적합"으로 판정하세요.
+2. 소제목형 종합 의견(overall_opinion) 작성: 
+   반드시 아래 4가지 소제목을 포함하여 전문가 톤으로 상세히 작성하세요. 
+   형식: 【1. 시설관리 종합 평가】, 【2. 방지시설 운영 효율】, 【3. LDAR 점검 이행 상태】, 【4. 향후 관리 권고 사항】
 
 [출력 JSON 구조]
 {{
   "scores": {{ 
     "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 적정"}}, 
     "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 양호"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 완료"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 적정"}}, 
     "record_score": {{"score":90, "grade":"B", "reason":"기록 관리 충실"}}, 
     "overall_score": {{"score":96, "grade":"A"}} 
   }},
-  "manager": {{ "data": [ {{"period": "2022", "name": "마스킹됨", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "수치", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
+  "manager": {{ "data": [ {{"period": "2022", "name": "마스킹됨", "dept": "안전팀", "date": "선임일", "qualification": "자격"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
   "process_emission": {{ "data": [] }},
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "총수", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
-  "overall_opinion": "여기에 위 지침에 따른 소제목형 의견을 작성하세요."
+  "overall_opinion": "여기에 【소제목】을 포함한 풍부한 의견을 작성하세요."
 }}
 """
     try:
@@ -96,7 +89,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.1,
+                temperature=0.2,
                 safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
             )
         )
