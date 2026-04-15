@@ -72,6 +72,10 @@ class ProfessionalPDF(FPDF):
         self.set_font(fn, "B", 13); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 11, txt, 0, 1, "L")
         self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2)
 
+    def draw_sub_header(self, txt):
+        # 🚨 [중요] 누락되었던 함수를 다시 클래스 내부로 복구했습니다.
+        fn = self._fn(); self.check_page_break(15); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_ACCENT); self.set_x(12); self.cell(0, 8, txt, 0, 1, "L")
+
     def draw_zebra_table(self, headers, rows, col_widths):
         fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(175, 195, 220); self.set_line_width(0.2); self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
         for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
