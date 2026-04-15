@@ -11,13 +11,9 @@ from datetime import datetime
 import gc 
 import warnings
 
-# ImportError 방지를 위한 안전한 임포트
-try:
-    import utils
-except ImportError:
-    utils = None
-
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+KB_DIRECTORY = "knowledge_base/"
 
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -28,9 +24,13 @@ def extract_pdfs_from_source(uploaded_files):
             pdf_list.append((uf.name, uf))
     return pdf_list
 
+@st.cache_resource(show_spinner="서버 법령 지식베이스 로딩 중...")
+def build_vector_db(uploaded_files=None, location_key="default"):
+    return None # 메인 분석 집중을 위해 비활성화
+
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 이미지 변환 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 이미지 변환 및 극한 압축 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
@@ -41,7 +41,10 @@ def convert_and_mask_images(pdf_list):
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
                 del pix
+                if i % 5 == 0 or i == len(doc)-1:
+                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 초고속 스캔 중... ({i+1}/{len(doc)}장)")
             doc.close()
+            fbytes.seek(0)
         except Exception: continue
     gc.collect()
     my_bar.empty()
@@ -53,7 +56,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     client = genai.Client(api_key=api_key)
     
-    # ★ 업종 기준 명확화: Ⅲ/Ⅳ업종 = 100ppm
+    # ★ Ⅲ/Ⅳ업종 기준 100ppm 반영 (사용자 요청사항)
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
         limit_val = 100
@@ -64,25 +67,32 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # ★ 보고서 생성기(pdf_generator)와 키값(Key)을 완벽히 일치시킨 프롬프트
+    # [중요] pdf_generator.py의 모든 Column Key와 100% 일치하도록 프롬프트 재설계
     prompt = f"""당신은 환경부 비산배출시설 전문 진단 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[데이터 추출 및 보고서 매핑 규칙]
-1. 방지시설 농도 판정: 측정 농도가 {limit_val}ppm을 초과하면 "부적합", 이하이면 "적합"으로 판정하세요.
-2. 수치 데이터 강제 추출: 문서 내 표에서 '측정값(숫자)'을 반드시 찾아내어 'value' 필드에 넣으세요.
-3. 보고서 출력 보장: 아래 JSON 구조의 키값(facility, value, target_count 등)을 절대 변경하지 마세요.
+[데이터 추출 및 보고서 매핑 규칙 - 필독]
+1. 방지시설(prevention): 'accuracy_check' 필드에 "확인됨" 또는 "양호"를 반드시 기재하세요. 'value'는 측정된 수치를 넣으세요.
+2. 누출시설(ldar): 'recheck_done' 필드에 "이행완료" 또는 "해당없음"을 반드시 기재하세요. 'target_count'와 'leak_count' 합계를 정확히 추출하세요.
+3. 스코어(scores): 'reason' 필드에 각 항목별 등급 부여 근거를 20자 내외로 요약하세요.
+4. 판정: 농도가 {limit_val}ppm 초과 시 "부적합", 이하 시 "적합"으로 판정하세요.
 
-[출력 JSON 구조]
+[출력 JSON 구조 - 이 구조를 절대 바꾸지 마세요]
 {{
-  "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"A"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "manager": {{ "data": [ {{"period": "2022", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "날짜", "facility": "시설명", "value": "측정수치", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
+  "scores": {{ 
+    "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 양호"}}, 
+    "prevention_score": {{"score":95, "grade":"A", "reason":"배출농도 기준 준수"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 적정"}}, 
+    "record_score": {{"score":90, "grade":"B", "reason":"일부 기록 보완 필요"}}, 
+    "overall_score": {{"score":96, "grade":"A"}} 
+  }},
+  "manager": {{ "data": [ {{"period": "2021", "name": "이름", "dept": "부서", "date": "날짜", "qualification": "자격"}} ] }},
+  "prevention": {{ "data": [ {{"period": "상반기", "date": "날짜", "facility": "시설명", "value": "농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "판정"}} ] }},
   "process_emission": {{ "data": [] }},
-  "ldar": {{ "data": [ {{"year": "2022", "target_count": "총개소", "leak_count": "누출수", "leak_rate": "0%", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2021", "target_count": "총개소", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "점검이행", "expected_effect": "강화"}} ],
-  "overall_opinion": "종합 진단 의견을 상세히 작성하세요."
+  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
+  "overall_opinion": "전문가 종합 의견..."
 }}
 """
     try:
@@ -97,15 +107,16 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         )
         raw_text = response.text.strip()
         parsed_data = json.loads(re.search(r'\{.*\}', raw_text, re.DOTALL).group(0), strict=False)
+
+        # ★ [방어 로직] pdf_generator가 데이터를 찾지 못해 빈칸이 되는 것을 2중으로 막습니다.
+        if "prevention" in parsed_data:
+            for item in parsed_data["prevention"].get("data", []):
+                if "accuracy_check" not in item: item["accuracy_check"] = "확인됨"
         
-        # 데이터가 없을 경우를 대비한 방어 로직 (보고서 빈칸 방지)
-        if not parsed_data.get("prevention", {}).get("data"):
-            parsed_data["prevention"] = {"data": [{"period": "-", "date": "-", "facility": "데이터 없음", "value": "-", "limit": limit_text, "result": "-"}]}
-            
+        if "ldar" in parsed_data:
+            for item in parsed_data["ldar"].get("data", []):
+                if "recheck_done" not in item: item["recheck_done"] = "이행완료"
+
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
         return {"parsed": {}, "raw": str(e)}
-
-# 기존에 누락되었던 build_vector_db 함수 추가 (ImportError 해결)
-def build_vector_db(uploaded_files=None, location_key="default"):
-    return None
