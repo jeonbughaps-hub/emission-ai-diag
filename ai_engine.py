@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 KB_DIRECTORY = "knowledge_base/"
 
 def get_model(): 
-    # 4/13일 당시 성공적으로 사용했던 모델
+    # 4/13일 당시 성공적으로 사용했던 분석 모델
     return genai.GenerativeModel("gemini-2.0-flash")
 
 def extract_pdfs_from_source(uploaded_files):
@@ -28,44 +28,46 @@ def extract_pdfs_from_source(uploaded_files):
 
 @st.cache_resource(show_spinner="서버 법령 지식베이스 로딩 중...")
 def build_vector_db(uploaded_files=None, location_key="default"):
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from langchain_core.vectorstores import InMemoryVectorStore
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    # ★ 에러 방어벽: RAG 구축 중 에러가 나도 스트림릿 앱이 죽지 않도록 감쌉니다!
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_core.vectorstores import InMemoryVectorStore
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-    all_texts = ""
-    # 오직 사전에 폴더(KB_DIRECTORY)에 넣어둔 법령/지침만 지식베이스로 구축합니다.
-    if os.path.exists(KB_DIRECTORY):
-        for filename in os.listdir(KB_DIRECTORY):
-            if filename.lower().endswith(".pdf"):
-                path = os.path.join(KB_DIRECTORY, filename)
-                try:
-                    doc = fitz.open(path)
-                    for page in doc:
-                        all_texts += page.get_text() + "\n"
-                    doc.close()
-                except Exception: continue
-                
-    # ★ 핵심 수정: 4/13 코드에 있던 '업로드된 파일(수백 장)을 통째로 임베딩하는 로직'을 삭제했습니다.
-    # (이 부분 때문에 Payload 제한에 걸려 GoogleGenerativeAIError가 났던 것입니다)
+        all_texts = ""
+        if os.path.exists(KB_DIRECTORY):
+            for filename in os.listdir(KB_DIRECTORY):
+                if filename.lower().endswith(".pdf"):
+                    path = os.path.join(KB_DIRECTORY, filename)
+                    try:
+                        doc = fitz.open(path)
+                        for page in doc:
+                            all_texts += page.get_text() + "\n"
+                        doc.close()
+                    except Exception: continue
+                    
+        if not all_texts.strip():
+            return None
             
-    if not all_texts.strip():
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key: return None
+        
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        docs = text_splitter.create_documents([all_texts])
+        
+        # ★ 4/13 오리지널 임베딩 모델로 복구 (에러 원천 차단)
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+        
+        # 구글 무료 API의 1회 전송량 초과를 막기 위해 배치(Batch) 사이즈를 10으로 아주 잘게 쪼갭니다.
+        vector_db = InMemoryVectorStore.from_documents(docs[:10], embeddings)
+        for i in range(10, len(docs), 10):
+            vector_db.add_documents(docs[i:i+10])
+            
+        return vector_db
+    except Exception as e:
+        # 에러가 나면 앱을 터뜨리지 않고, RAG 없이 분석하도록 None을 반환합니다.
+        print(f"지식베이스 구축 에러 (앱은 정상 작동합니다): {e}")
         return None
-        
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key: return None
-    
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    docs = text_splitter.create_documents([all_texts])
-    
-    # 안정적인 최신 임베딩 모델로 변경
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
-    
-    # 문서가 많을 경우를 대비해 잘게 쪼개서 임베딩합니다.
-    vector_db = InMemoryVectorStore.from_documents(docs[:50], embeddings)
-    for i in range(50, len(docs), 50):
-        vector_db.add_documents(docs[i:i+50])
-        
-    return vector_db
 
 def convert_and_mask_images(pdf_list):
     all_images = []
@@ -75,7 +77,7 @@ def convert_and_mask_images(pdf_list):
             fbytes.seek(0)
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for i, page in enumerate(doc):
-                # ★ 4/13 성공의 핵심: 화질은 올리고(1.8배), 용량은 75%로 압축!
+                # ★ 4/13 성공의 핵심 비밀: 화질은 1.8배로 올리고, 용량은 75%로 압축!
                 pix = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8))
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg", 75)))
                 if img.mode != 'RGB': img = img.convert('RGB')
@@ -83,7 +85,7 @@ def convert_and_mask_images(pdf_list):
                 del pix
                 
                 if i % 5 == 0 or i == len(doc)-1:
-                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 문서 스캔 중... ({i+1}/{len(doc)}장)")
+                    my_bar.progress(0.1 + 0.8 * ((i+1)/len(doc)), text=f"[{name}] 4/13 오리지널 로직으로 스캔 중... ({i+1}/{len(doc)}장)")
             doc.close()
             fbytes.seek(0)
         except Exception as e: 
@@ -98,6 +100,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     if not api_key or not measure_images: 
         return {"parsed": {}, "raw": ""}
         
+    # 구형 라이브러리 설정 원상복구
     genai.configure(api_key=api_key)
     from utils import get_limit_ppm
     model = get_model()
@@ -112,7 +115,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except Exception as e: 
             print("RAG Error:", e)
 
-    my_bar = st.progress(0.5, text="🚀 AI가 문서를 정밀 분석 중입니다...")
+    my_bar = st.progress(0.5, text="🚀 AI가 4월 13일 오리지널 로직으로 정밀 분석 중입니다...")
 
     prompt = f"""당신은 환경부 비산배출시설 전문 진단 엔진입니다. (시점: {current_time})
 업종: {user_industry} | THC 기준: {limit_text}
@@ -138,6 +141,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 """
     try:
         gc.collect()
+        # 4/13 성공 로직: File API 없이 이미지 리스트 통째로 인라인 전송
         response = model.generate_content([prompt, *measure_images])
         raw_text = response.text
         start_idx = raw_text.find('{')
