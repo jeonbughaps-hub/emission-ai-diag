@@ -57,11 +57,11 @@ class ProfessionalPDF(FPDF):
             self.set_font(fn, "", 9); self.set_text_color(30, 40, 60); self.cell(130, row_h - 1, " " + str(v), 0, 0, "L", fill=True)
         self.set_fill_color(*BRAND_ACCENT); self.rect(0, 248, 210, 8, "F")
 
-    def draw_toc(self, toc_items):
+    def draw_toc(self, toc_data): # 🚨 변수명 수정: toc_items -> toc_data
         fn = self._fn(); self.set_fill_color(*BRAND_LIGHT_BG); self.rect(0, 0, 210, 297, "F")
         self.set_fill_color(*BRAND_NAVY); self.rect(0, 0, 210, 20, "F")
         self.set_y(5); self.set_font(fn, "B", 12); self.set_text_color(220, 232, 248); self.cell(0, 10, "목    차  (Table of Contents)", 0, 1, "C"); self.ln(4)
-        for title, page in toc_data: # toc_items 대신 호출 인자명 사용
+        for title, page in toc_data:
             is_sub = title.startswith("  "); self.set_x(22 if is_sub else 15); self.set_font(fn, "" if is_sub else "B", 9 if is_sub else 11); self.set_text_color(*(80, 95, 115) if is_sub else BRAND_NAVY)
             self.cell(150, 7, title.strip()); self.cell(20, 7, str(page), 0, 1, "R")
 
@@ -109,7 +109,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     toc_data = [("가. 사업장 및 진단 개요", "1"), ("나. 준수율 종합 스코어카드", "1"), ("다. 지역 환경 분석", "2"), ("라. 시설별 정밀 진단 내역", "3"), ("바. AI 정밀 진단 종합 의견", "4")]
     pdf = ProfessionalPDF(toc_data=toc_data); pdf._reg_fonts(); pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page(); pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), "-", now_str)
-    pdf.add_page(); pdf.draw_toc(toc_data) # 변수명 통일
+    pdf.add_page(); pdf.draw_toc(toc_data)
     pdf.add_page(); pdf.draw_section_header("가. 사업장 및 진단 개요")
     pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [32, 63, 32, 63])
     pdf.draw_section_header("나. 준수율 종합 스코어카드"); pdf.draw_scorecard(scores)
