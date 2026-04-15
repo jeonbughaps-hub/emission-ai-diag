@@ -61,7 +61,7 @@ class ProfessionalPDF(FPDF):
         fn = self._fn(); self.set_fill_color(*BRAND_LIGHT_BG); self.rect(0, 0, 210, 297, "F")
         self.set_fill_color(*BRAND_NAVY); self.rect(0, 0, 210, 20, "F")
         self.set_y(5); self.set_font(fn, "B", 12); self.set_text_color(220, 232, 248); self.cell(0, 10, "목    차  (Table of Contents)", 0, 1, "C"); self.ln(4)
-        for title, page in toc_items:
+        for title, page in toc_data: # toc_items 대신 호출 인자명 사용
             is_sub = title.startswith("  "); self.set_x(22 if is_sub else 15); self.set_font(fn, "" if is_sub else "B", 9 if is_sub else 11); self.set_text_color(*(80, 95, 115) if is_sub else BRAND_NAVY)
             self.cell(150, 7, title.strip()); self.cell(20, 7, str(page), 0, 1, "R")
 
@@ -73,7 +73,6 @@ class ProfessionalPDF(FPDF):
         self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2)
 
     def draw_sub_header(self, txt):
-        # 🚨 [중요] 누락되었던 함수를 다시 클래스 내부로 복구했습니다.
         fn = self._fn(); self.check_page_break(15); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_ACCENT); self.set_x(12); self.cell(0, 8, txt, 0, 1, "L")
 
     def draw_zebra_table(self, headers, rows, col_widths):
@@ -106,16 +105,16 @@ class ProfessionalPDF(FPDF):
 
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일"); data = ai_data.get("parsed", {}); scores = data.get("scores", {})
-    toc_items = [("가. 사업장 및 진단 개요", "1"), ("나. 준수율 종합 스코어카드", "1"), ("다. 지역 환경 분석", "2"), ("라. 시설별 정밀 진단 내역", "3"), ("바. AI 정밀 진단 종합 의견", "4")]
-    pdf = ProfessionalPDF(toc_data=toc_items); pdf._reg_fonts(); pdf.set_auto_page_break(auto=True, margin=15)
+    # 목차 데이터
+    toc_data = [("가. 사업장 및 진단 개요", "1"), ("나. 준수율 종합 스코어카드", "1"), ("다. 지역 환경 분석", "2"), ("라. 시설별 정밀 진단 내역", "3"), ("바. AI 정밀 진단 종합 의견", "4")]
+    pdf = ProfessionalPDF(toc_data=toc_data); pdf._reg_fonts(); pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page(); pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), "-", now_str)
-    pdf.add_page(); pdf.draw_toc(toc_items)
+    pdf.add_page(); pdf.draw_toc(toc_data) # 변수명 통일
     pdf.add_page(); pdf.draw_section_header("가. 사업장 및 진단 개요")
     pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [32, 63, 32, 63])
     pdf.draw_section_header("나. 준수율 종합 스코어카드"); pdf.draw_scorecard(scores)
     pdf.add_page(); pdf.draw_section_header("다. 지역 환경 분석"); pdf.draw_text_box(air_advice, title=f"관할 측정소: {station_name}")
-    pdf.add_page(); pdf.draw_section_header("라. 시설별 정밀 진단 내역")
-    pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
+    pdf.add_page(); pdf.draw_section_header("라. 시설별 정밀 진단 내역"); pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
     prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
     pdf.draw_zebra_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 60, 25, 25, 30])
     pdf.add_page(); pdf.draw_section_header("바. AI 정밀 진단 종합 의견"); pdf.draw_text_box(data.get("overall_opinion", "-"))
