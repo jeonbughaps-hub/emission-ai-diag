@@ -59,18 +59,21 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[진단 및 추출 지침]
-1. 데이터 추출: 방지시설 농도 수치를 정확히 추출하고 {limit_val}ppm 초과 시 "부적합"으로 판정하세요.
-2. 소제목형 종합 의견(overall_opinion) 작성: 
-   반드시 아래 4가지 소제목을 포함하여 전문가 톤으로 상세히 작성하세요. 
-   형식: 【1. 시설관리 종합 평가】, 【2. 방지시설 운영 효율】, 【3. LDAR 점검 이행 상태】, 【4. 향후 관리 권고 사항】
+[종합 의견 작성 지침]
+반드시 아래 4가지 소제목을 사용하여 전문가 톤으로 800자 이상 상세히 작성하세요. 
+각 소제목은 반드시 '【숫자. 제목】' 형식을 사용하고, 줄바꿈을 적절히 섞어 가독성을 높이세요.
+
+【1. 시설관리 종합 평가】
+【2. 방지시설 운영 효율 및 THC 농도 분석】
+【3. LDAR 점검 이행 및 누출 관리 적정성】
+【4. 향후 정기점검 대비 중점 관리 권고】
 
 [출력 JSON 구조]
 {{
   "scores": {{ 
     "manager_score": {{"score":100, "grade":"A", "reason":"관리인 선임 적정"}}, 
     "prevention_score": {{"score":95, "grade":"A", "reason":"농도 기준 준수 양호"}}, 
-    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 적정"}}, 
+    "ldar_score": {{"score":100, "grade":"A", "reason":"누출 점검 이행 완료"}}, 
     "record_score": {{"score":90, "grade":"B", "reason":"기록 관리 충실"}}, 
     "overall_score": {{"score":96, "grade":"A"}} 
   }},
@@ -80,7 +83,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "총수", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
-  "overall_opinion": "여기에 【소제목】을 포함한 풍부한 의견을 작성하세요."
+  "overall_opinion": "여기에 소제목이 포함된 풍부한 의견을 작성하세요."
 }}
 """
     try:
