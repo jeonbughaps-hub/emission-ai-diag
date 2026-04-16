@@ -97,14 +97,6 @@ class ProfessionalPDF(FPDF):
             clean = title.strip(); dot_w = 150 - self.get_string_width(clean); dots = "." * max(int(dot_w / max(self.get_string_width("."), 0.1)), 3)
             self.cell(0, 7, f"{clean}  {dots}  {page}", 0, 1, "L") 
 
-    def add_new_section_page(self, txt):
-        self._section = txt
-        self.add_page()
-        self.check_page_break(25); self.ln(2)
-        self.set_fill_color(*BRAND_ACCENT); self.rect(10, self.get_y(), 4, 11, "F")
-        self.set_font(self._fn(), "B", 13); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 11, txt, 0, 1, "L")
-        self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2)
-
     def draw_section_header(self, txt, set_section=True):
         fn = self._fn()
         if set_section: self._section = txt 
@@ -168,33 +160,77 @@ class ProfessionalPDF(FPDF):
         self.set_font(fn, "", 8); self.set_text_color(*BRAND_NAVY); self.set_xy(x, start_y + 19)
         self.cell(190 - (x - 10), 5, f"총점 {overall_score}점", 0, 0, "C"); self.set_y(start_y + 30)
 
-    # ★ 추가된 대기질 전용 인포그래픽 박스 ★
+    # ★ 업그레이드: 게이지와 상태가 표시되는 동적 대기질 인포그래픽 ★
     def draw_air_quality_infographic(self, station_name: str, air_data: dict):
-        fn = self._fn(); self.check_page_break(40); start_y = self.get_y()
-        # 전체 옅은 배경
-        self.set_fill_color(240, 248, 255); self.rect(10, start_y, 190, 32, "F")
+        fn = self._fn(); self.check_page_break(55); start_y = self.get_y()
+        
+        pm10_str = air_data.get("pm10Value", "-") if isinstance(air_data, dict) else "-"
+        o3_str = air_data.get("o3Value", "-") if isinstance(air_data, dict) else "-"
+
+        # 상태별 컬러 산출 함수
+        def get_status(val, item_type):
+            try: v = float(val)
+            except: return "정보없음", (150, 150, 150), 0
+            if item_type == "PM10":
+                if v <= 30: return "좋음", (50, 150, 255), min(v/150, 1.0)
+                elif v <= 80: return "보통", (60, 180, 110), min(v/150, 1.0)
+                elif v <= 150: return "나쁨", (240, 150, 50), min(v/150, 1.0)
+                else: return "매우나쁨", (220, 60, 60), 1.0
+            elif item_type == "O3":
+                if v <= 0.030: return "좋음", (50, 150, 255), min(v/0.150, 1.0)
+                elif v <= 0.090: return "보통", (60, 180, 110), min(v/0.150, 1.0)
+                elif v <= 0.150: return "나쁨", (240, 150, 50), min(v/0.150, 1.0)
+                else: return "매우나쁨", (220, 60, 60), 1.0
+
+        pm10_stat, pm10_color, pm10_ratio = get_status(pm10_str, "PM10")
+        o3_stat, o3_color, o3_ratio = get_status(o3_str, "O3")
+
+        # 인포그래픽 배경
+        self.set_fill_color(245, 248, 252); self.rect(10, start_y, 190, 46, "F")
         self.set_xy(15, start_y + 4); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY)
-        self.cell(0, 6, f"실시간 대기질 지수 요약 (관할 측정소: {station_name})")
+        self.cell(0, 6, f"실시간 대기질 지수 현황 대시보드 (관할: {station_name})")
 
-        # 만약 API 에러 등으로 dict가 아니라 문자열이나 None이 들어올 경우 방어
-        pm10 = air_data.get("pm10Value", "-") if isinstance(air_data, dict) else "-"
-        o3 = air_data.get("o3Value", "-") if isinstance(air_data, dict) else "-"
+        # --- 1. 오존 (O3) 카드 ---
+        self.set_fill_color(255, 255, 255); self.set_draw_color(210, 220, 230)
+        self.rect(15, start_y + 13, 80, 28, "FD")
+        self.set_xy(20, start_y + 16); self.set_font(fn, "B", 10); self.set_text_color(70, 80, 95)
+        self.cell(30, 6, "오존 (O3)", 0, 0, "L")
+        self.set_font(fn, "B", 15); self.set_text_color(40, 50, 60); self.set_xy(20, start_y + 23)
+        self.cell(30, 8, f"{o3_str} ppm", 0, 0, "L")
+        
+        # O3 배지
+        self.set_fill_color(*o3_color); self.rect(72, start_y + 16, 18, 6, "F")
+        self.set_xy(72, start_y + 16.5); self.set_font(fn, "B", 9); self.set_text_color(255, 255, 255)
+        self.cell(18, 5, o3_stat, 0, 0, "C")
+        
+        # O3 게이지 바
+        bar_w = 55; bar_x = 20; bar_y = start_y + 35
+        self.set_fill_color(230, 235, 240); self.rect(bar_x, bar_y, bar_w, 3, "F")
+        self.set_fill_color(*o3_color); self.rect(bar_x, bar_y, bar_w * o3_ratio, 3, "F")
+        self.set_font(fn, "", 7); self.set_text_color(120, 120, 120)
+        self.set_xy(bar_x + bar_w + 3, bar_y - 1.5); self.cell(10, 5, "기준: 0.09", 0, 0, "L")
 
-        # 오존 블록 (왼쪽)
-        self.set_fill_color(255, 255, 255); self.set_draw_color(200, 210, 220)
-        self.rect(15, start_y + 12, 80, 16, "FD")
-        self.set_xy(20, start_y + 14); self.set_font(fn, "B", 10); self.set_text_color(80, 90, 100)
-        self.cell(30, 12, "오존 (O3)", 0, 0, "L")
-        self.set_xy(50, start_y + 14); self.set_font(fn, "B", 15); self.set_text_color(210, 80, 80) # 붉은 계열 강조
-        self.cell(40, 12, f"{o3} ppm", 0, 0, "R")
+        # --- 2. 미세먼지 (PM10) 카드 ---
+        self.set_fill_color(255, 255, 255); self.set_draw_color(210, 220, 230)
+        self.rect(105, start_y + 13, 80, 28, "FD")
+        self.set_xy(110, start_y + 16); self.set_font(fn, "B", 10); self.set_text_color(70, 80, 95)
+        self.cell(30, 6, "미세먼지 (PM10)", 0, 0, "L")
+        self.set_font(fn, "B", 15); self.set_text_color(40, 50, 60); self.set_xy(110, start_y + 23)
+        self.cell(30, 8, f"{pm10_str} ㎍/m³", 0, 0, "L")
+        
+        # PM10 배지
+        self.set_fill_color(*pm10_color); self.rect(162, start_y + 16, 18, 6, "F")
+        self.set_xy(162, start_y + 16.5); self.set_font(fn, "B", 9); self.set_text_color(255, 255, 255)
+        self.cell(18, 5, pm10_stat, 0, 0, "C")
+        
+        # PM10 게이지 바
+        bar_w2 = 55; bar_x2 = 110; bar_y2 = start_y + 35
+        self.set_fill_color(230, 235, 240); self.rect(bar_x2, bar_y2, bar_w2, 3, "F")
+        self.set_fill_color(*pm10_color); self.rect(bar_x2, bar_y2, bar_w2 * pm10_ratio, 3, "F")
+        self.set_font(fn, "", 7); self.set_text_color(120, 120, 120)
+        self.set_xy(bar_x2 + bar_w2 + 3, bar_y2 - 1.5); self.cell(10, 5, "기준: 80", 0, 0, "L")
 
-        # 미세먼지 블록 (오른쪽)
-        self.rect(105, start_y + 12, 80, 16, "FD")
-        self.set_xy(110, start_y + 14); self.set_font(fn, "B", 10); self.set_text_color(80, 90, 100)
-        self.cell(30, 12, "미세먼지 (PM10)", 0, 0, "L")
-        self.set_xy(140, start_y + 14); self.set_font(fn, "B", 15); self.set_text_color(210, 130, 30) # 오렌지 계열 강조
-        self.cell(40, 12, f"{pm10} ㎍/m³", 0, 0, "R")
-        self.set_y(start_y + 36)
+        self.set_y(start_y + 50)
 
     def draw_text_box(self, text: str, title: str = ""):
         fn = self._fn()
@@ -218,7 +254,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     toc_items = [
         ("가. 사업장 및 진단 개요", "1"), ("  - 1) 기본 정보 요약표", "1"),
         ("나. 준수율 종합 스코어카드", "1"), ("  - 1) 항목별 점수 및 등급", "1"),
-        ("다. 공공데이터 기반 지역 환경 분석", "2"), ("  - 1) 주요 대기질 수치 현황", "2"), ("  - 2) VOCs 연계 전문가 제언 및 관리 지침", "2"),
+        ("다. 공공데이터 기반 지역 환경 분석", "2"), ("  - 1) 실시간 대기질 지수 대시보드", "2"), ("  - 2) VOCs 연계 전문가 제언 및 관리 지침", "2"),
         ("라. 시설별 정밀 진단 내역 (전수조사)", "2"), ("  - 1) 방지시설 배출농도 추이 (THC)", "2"), ("  - 2) 비산누출시설(LDAR) 점검 실적", "2"),
         ("마. 위험도 매트릭스 및 행정처분 가능성 평가", "3"),
         ("바. AI 정밀 진단 종합 의견 및 중장기 로드맵", "3"),
@@ -231,7 +267,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.add_page(); pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), user_info.get("permit_no", "-"), now_str)
     pdf.add_page(); pdf.draw_toc(toc_items)
     
-    # 여기서부터 본문 시작 (1페이지)
     pdf.add_page()
     pdf.draw_section_header("가. 사업장 및 진단 개요")
     pdf.draw_sub_header("1) 기본 정보 요약표")
@@ -240,11 +275,9 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_section_header("나. 준수율 종합 스코어카드")
     pdf.draw_sub_header("1) 항목별 준수율 점수 및 등급")
     pdf.draw_visual_scorecard(scores)
-    pdf.draw_zebra_table(["평가 항목", "점수", "등급", "근거 요약"], [["관리담당자 선임", scores.get("manager_score", {}).get("score", "100"), scores.get("manager_score", {}).get("grade", "A"), "적정"], ["공정/방지시설 기준", scores.get("prevention_score", {}).get("score", "95"), scores.get("prevention_score", {}).get("grade", "A"), "농도 준수"], ["LDAR 누출 점검", scores.get("ldar_score", {}).get("score", "100"), scores.get("ldar_score", {}).get("grade", "A"), "이행 완료"], ["운영기록 충실성", scores.get("record_score", {}).get("score", "90"), scores.get("record_score", {}).get("grade", "B"), "기록 양호"]], [40, 30, 30, 90])
-
+    
     pdf.draw_section_header("다. 공공데이터 기반 지역 환경 분석")
-    pdf.draw_sub_header("1) 실시간 주요 대기질 수치 현황")
-    pdf.draw_air_quality_infographic(station_name, air_data) # ★ 표 대신 멋진 인포그래픽 삽입 ★
+    pdf.draw_air_quality_infographic(station_name, air_data)
     pdf.draw_sub_header("2) VOCs 연계 대기환경 전문가 제언 및 관리 지침")
     pdf.draw_text_box(air_advice)
     
