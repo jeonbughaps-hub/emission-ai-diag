@@ -9,8 +9,8 @@ class ProfessionalPDF(FPDF):
         super().__init__()
         self._toc      = toc_data or []
         self._section = ""
-        # 하단 여백을 20으로 설정하여 텍스트가 바닥에 닿기 전 안전하게 넘어가도록 설정
-        self.set_auto_page_break(auto=True, margin=20) 
+        # 하단 여백을 확보하여 내용이 길어지면 자연스럽게 페이지가 넘어가도록 설정
+        self.set_auto_page_break(auto=True, margin=15) 
         self.page_break_trigger = 265 
 
     def _fn(self) -> str:
@@ -28,19 +28,23 @@ class ProfessionalPDF(FPDF):
             self.add_page()
 
     def header(self):
-        # 1, 2페이지(표지, 목차)는 헤더 생략
         if self.page_no() <= 2: return
         fn = self._fn()
         self.set_font(fn, "B", 8)
         self.set_text_color(*BRAND_NAVY)
-        self.set_y(7)
+        
+        # 헤더 그리기 시작
+        self.set_xy(10, 7)
         self.cell(95, 5, "비산배출시설 정밀 자가진단 보고서", 0, 0, "L")
-        self.cell(95, 5, self._section, 0, 0, "R")
+        self.set_x(10) # 겹치지 않게 전체 폭(190) 기준으로 우측 정렬
+        self.cell(190, 5, self._section, 0, 0, "R")
+        
         self.set_draw_color(*BRAND_ACCENT)
         self.set_line_width(0.3)
         self.line(10, 13, 200, 13)
-        # ★ 핵심 해결: 헤더를 그린 후 본문이 시작될 Y좌표를 18로 강제 지정하여 겹침 방지!
-        self.set_y(18) 
+        
+        # ★ [가장 중요한 핵심 픽스] 헤더를 그린 후, 본문을 쓰기 위해 펜을 좌측 여백(X=10)으로 강제 복귀!
+        self.set_xy(10, 18)
 
     def footer(self):
         if self.page_no() <= 2: return
@@ -115,8 +119,9 @@ class ProfessionalPDF(FPDF):
             self.cell(0, 7, f"{clean}  {dots}  {page}", 0, 1, "L") 
 
     def draw_section_header(self, txt, set_section=True):
-        fn = self._fn(); self.check_page_break(25); self.ln(2)
-        if set_section: self._section = txt
+        fn = self._fn()
+        if set_section: self._section = txt # 페이지 브레이크 체크 이전에 섹션명 먼저 선언
+        self.check_page_break(25); self.ln(2)
         self.set_fill_color(*BRAND_ACCENT); self.rect(10, self.get_y(), 4, 11, "F")
         self.set_font(fn, "B", 13); self.set_text_color(*BRAND_NAVY); self.set_x(16); self.cell(0, 11, txt, 0, 1, "L")
         self.set_draw_color(*BRAND_ACCENT); self.set_line_width(0.4); self.line(10, self.get_y(), 200, self.get_y()); self.ln(2) 
@@ -124,7 +129,7 @@ class ProfessionalPDF(FPDF):
     def draw_sub_header(self, txt):
         fn = self._fn(); self.check_page_break(15); self.ln(2); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_ACCENT); self.set_x(12); self.cell(0, 7, txt, 0, 1, "L"); self.ln(1)
 
-    def draw_zebra_table(self, headers, rows, col_widths):
+    def draw_zebra_table(self, headers, rows, col_widths, highlight_last_col=False):
         fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(175, 195, 220); self.set_line_width(0.2); self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
         for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln(); self.set_font(fn, "", 8.5); self.set_text_color(35, 45, 60); alt = False
@@ -135,7 +140,7 @@ class ProfessionalPDF(FPDF):
                 self.cell(col_widths[i], row_h, str(val), border="B", align="C", fill=True)
             self.ln(); alt = not alt
 
-    def draw_grouped_table(self, headers, rows, col_widths, group_col_idx=0):
+    def draw_grouped_table(self, headers, rows, col_widths, group_col_idx=0, highlight_last_col=False):
         fn = self._fn(); self.set_fill_color(*BRAND_HEADER_BG); self.set_draw_color(175, 195, 220); self.set_line_width(0.2); self.set_font(fn, "B", 9); self.set_text_color(*BRAND_NAVY)
         for i, h in enumerate(headers): self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
         self.ln(); self.set_font(fn, "", 8.5); self.set_text_color(35, 45, 60)
@@ -155,27 +160,27 @@ class ProfessionalPDF(FPDF):
         self.set_xy(15, start_y + 4); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 6, "항목별 진단 결과 및 종합 등급")
         grade = scores_data.get("overall_score", {}).get("grade", "F")
         self.set_font(fn, "B", 24); self.set_text_color(*SCORE_COLORS.get(grade, (100,100,100))); self.set_xy(160, start_y + 8); self.cell(30, 15, grade, 0, 0, "C")
-        self.set_y(start_y + 35) # 스코어카드 밑으로 커서 이동
+        self.set_y(start_y + 35)
 
     def draw_text_box(self, text: str, title: str = ""):
-        fn = self._fn(); w = 190
+        fn = self._fn()
         if title: 
             self.check_page_break(15)
-            self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.cell(0, 7, title, 0, 1, "L")
+            self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.set_x(10)
+            self.cell(0, 7, title, 0, 1, "L")
         
         for line in text.split("\n"):
             line = line.strip()
             if not line: 
-                self.ln(2)
-                continue
+                self.ln(2); continue
             if re.match(r"^【.*】", line):
-                self.check_page_break(15)
-                self.ln(2); self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY)
-                self.multi_cell(w, 6, line)
-                self.set_font(fn, "", 9.5); self.set_text_color(50, 50, 50)
+                self.check_page_break(15); self.ln(2)
+                self.set_font(fn, "B", 10); self.set_text_color(*BRAND_NAVY); self.set_x(10)
+                # w=0 으로 설정하여 여백을 벗어나지 않게 자동 폭 맞춤
+                self.multi_cell(0, 6, line)
             else:
-                self.set_font(fn, "", 9.5); self.set_text_color(50, 50, 50)
-                self.multi_cell(w, 6, "  " + line)
+                self.set_font(fn, "", 9.5); self.set_text_color(50, 50, 50); self.set_x(10)
+                self.multi_cell(0, 6, "  " + line)
 
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일"); data = ai_data.get("parsed", {}); scores = data.get("scores", {})
@@ -183,27 +188,24 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     
     pdf = ProfessionalPDF(toc_data=toc_items); pdf._reg_fonts()
     
-    # 각 섹션을 넉넉하게 페이지별로 구분하여 밀림 원천 차단
     pdf.add_page(); pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), "-", now_str)
-    
     pdf.add_page(); pdf.draw_toc(toc_items)
     
-    pdf.add_page(); 
+    pdf.add_page()
     pdf.draw_section_header("가. 사업장 및 진단 개요"); pdf.draw_sub_header("1) 기본 정보 요약표")
     pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [32, 63, 32, 63])
     pdf.draw_section_header("나. 준수율 종합 스코어카드"); pdf.draw_scorecard(scores)
     
-    pdf.add_page(); 
+    pdf.add_page()
     pdf.draw_section_header("다. 지역 환경 분석")
     pdf.draw_text_box(air_advice, title=f"관할 측정소: {station_name}")
     
-    pdf.add_page(); 
+    pdf.add_page()
     pdf.draw_section_header("라. 시설별 정밀 진단 내역 (전수조사)"); pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
     prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
     pdf.draw_grouped_table(["구분", "측정일", "시설명", "결과", "기준", "판정"], prev_rows, [30, 25, 60, 25, 25, 25])
     
-    # 의견란은 1,000자 이상 들어가므로 무조건 새 페이지에서 시작
-    pdf.add_page(); 
+    pdf.add_page()
     pdf.draw_section_header("바. AI 정밀 진단 종합 의견"); pdf.draw_text_box(data.get("overall_opinion", "-"))
     
     return bytes(pdf.output())
