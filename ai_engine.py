@@ -60,22 +60,17 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
 [★ 핵심 지시사항 ★]
-1. 데이터 추출: 첨부된 '운영기록부' 이미지에서 **실제 데이터(측정일자, 시설명, 결과값)**를 반드시 추출하여 JSON 배열에 넣으세요. 귀찮다고 예시 데이터(예: "날짜", "시설명")를 그대로 출력하면 절대 안 됩니다!
-2. 종합 의견 작성: 아래 4가지 소제목을 사용하여 800자 내외로 상세하고 전문적으로 작성하세요.
-
-【1. 시설관리 종합 평가】
-【2. 방지시설 효율성 분석】
-【3. LDAR 점검 이행 평가】
-【4. 중장기 관리 권고 사항】
+1. 실제 데이터 추출: 첨부된 이미지에서 **실제 방지시설 농도 수치와 LDAR 누출 수**를 반드시 추출하여 배열에 담으세요.
+2. 전문 종합 의견: 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요.
+   【1. 시설관리 종합 평가】, 【2. 방지시설 효율성 분석】, 【3. LDAR 점검 이행 평가】, 【4. 중장기 관리 권고 사항】
 
 [출력 JSON 구조]
 {{
-  "scores": {{ "manager_score": {{"score":100, "grade":"A", "reason":"적정"}}, "prevention_score": {{"score":95, "grade":"A", "reason":"준수"}}, "ldar_score": {{"score":100, "grade":"A", "reason":"양호"}}, "record_score": {{"score":90, "grade":"B", "reason":"보통"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "manager": {{ "data": [ {{"period": "2022", "name": "실제이름", "dept": "실제부서", "date": "실제날짜", "qualification": "자격"}} ] }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "실제날짜", "facility": "실제시설명", "value": "실제농도", "limit": "{limit_text}", "accuracy_check": "확인됨", "result": "적합/부적합"}} ] }},
+  "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "추출날짜", "facility": "추출시설명", "value": "추출농도", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2022", "target_count": "135", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검", "expected_effect": "안정화"}} ],
+  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
   "overall_opinion": "여기에 위 4가지 소제목을 포함하여 상세히 작성하세요."
 }}
 """
