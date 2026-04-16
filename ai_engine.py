@@ -41,9 +41,6 @@ def convert_and_mask_images(pdf_list):
     my_bar.empty()
     return all_images
 
-# -------------------------------------------------------------------
-# [업그레이드 1] 방지시설 및 LDAR 데이터 100% 전수조사 강제
-# -------------------------------------------------------------------
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key or not measure_images: return {"parsed": {}, "raw": ""}
@@ -59,14 +56,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # ★ 강력한 전수 추출 명령 및 경고 추가 ★
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 최우선 지시사항 : 3개년치 데이터 100% 전수 추출 ★]
-1. 데이터 누락 절대 금지: 첨부된 문서에 여러 해(최대 3년 이상)의 기록이 있습니다. 귀찮다고 1~2년치만 뽑고 멈추거나 요약하면 절대 안 됩니다. 
-2. 방지시설 농도(prevention): 문서에 기록된 '모든 연도, 모든 반기, 모든 시설'의 측정 데이터를 단 1건도 빠짐없이 JSON 배열에 전부 담으세요. (데이터가 50개면 50개 모두 출력)
-3. LDAR 점검(ldar): 문서에 기재된 '모든 연도'의 점검 개소와 누출 수를 연도별로 각각 분리하여 모두 추출하세요.
+[★ 최우선 지시사항 : 데이터 전수 추출 ★]
+1. 데이터 누락 불가: 첨부된 문서에 기록된 모든 연도(2년이든 3년이든 전체)의 방지시설 농도와 LDAR 데이터를 단 하나도 빠짐없이 JSON에 배열로 추출하세요.
 
 [전문 종합 의견 작성 지침]
 - 아래 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요.
@@ -88,8 +82,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.1, # 일관성과 팩트 위주로 강제
-                max_output_tokens=8192, # ★ 토큰 한계치를 최대로 늘려 중간에 멈추는 현상 방지
+                temperature=0.1, 
+                max_output_tokens=8192, 
                 safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
             )
         )
@@ -99,32 +93,28 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     except Exception as e:
         return {"parsed": {}, "raw": str(e)}
 
-# -------------------------------------------------------------------
-# [업그레이드 2] 유기물질(VOCs) 연계 대기질 전문 조언 생성기
-# -------------------------------------------------------------------
+# ★ 대기질 데이터를 활용하여 VOCs 연계 전문가 제언을 생성하는 함수 ★
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
-    """
-    단순한 수치 안내를 넘어, VOCs(유기물질)가 오존 및 미세먼지에 
-    미치는 광화학적 영향을 엮어 전문적인 조언을 생성합니다.
-    """
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key: return "대기질 정보를 불러올 수 없습니다."
     client = genai.Client(api_key=api_key)
     
     prompt = f"""
-당신은 대기환경 전문가입니다.
-관할 측정소({station_name})의 현재 대기질은 미세먼지(PM10): {pm10_val}, 오존(O3): {o3_val} 입니다.
-보고서를 읽는 사업장은 '비산배출시설(유기물질, VOCs)'을 다량 취급하는 곳입니다.
+당신은 대기환경 전문 연구원입니다.
+관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
+이 사업장은 인쇄, 코팅 등에서 '유기용제(VOCs)'를 다량 취급하는 비산배출시설입니다.
 
-다음 내용을 엮어서 전문적인 대기 환경 관리 지침(약 400자)을 3개의 항목으로 나누어 작성하세요.
-1. 사업장에서 배출되는 유기물질(VOCs)이 태양빛과 반응해 '광화학 스모그'와 '오존(O3)'을 생성한다는 점.
-2. 유기물질이 대기 중에서 2차 반응을 일으켜 '초미세먼지'를 가중시킨다는 점.
-3. 따라서 현재 지역 대기질 수치를 고려할 때, 오후 피크타임 유기용제 사용 공정 단축, 활성탄 교체 주기 준수, LDAR 수시 점검 등을 어떻게 선제적으로 해야 하는지 조언.
+아래 3가지 소제목을 사용하여 500자 분량의 아주 깊이 있고 전문적인 '환경 관리 지침'을 작성하세요.
+반드시 '광화학 반응', '2차 생성 미세먼지', '오존 생성 전구물질' 등의 전문 학술 용어를 자연스럽게 포함하세요.
 
-[출력 형식 예시]
-1. 현황 및 광화학적 영향: 지역 대기질(오존 {o3_val}, 미세먼지 {pm10_val})을 고려할 때... (VOCs 연계 설명)
-2. 시설 운영 가이드: VOCs 배출에 의한 2차 오염(미세먼지 생성 등)을 막기 위해...
-3. 선제적 저감 조치: 활성탄 교체 및...
+【1. 지역 대기질 현황 및 화학적 연관성】
+- 현재 지역의 오존/미세먼지 수치를 언급하며, 사업장에서 배출되는 유기용제(VOCs)가 질소산화물(NOx)과 태양광 아래서 광화학 반응을 일으켜 오존(O3)을 생성하고, 2차 유기 에어로졸로 변환되어 미세먼지를 가중시킨다는 점을 과학적으로 설명.
+
+【2. 현장 비산배출원 선제적 통제 가이드】
+- 오후 피크타임(14~16시) 유기용제 고농도 작업 조정 권고 및 옥외 하역, 이송, 혼합 과정에서의 원천적 누출 차단 관리 방안 제시.
+
+【3. 방지시설 및 LDAR 연계 집중 관리】
+- 활성탄 흡착탑 등 대기오염 방지시설의 처리 효율 최적화 방안 및 회전/연결 기기(플랜지, 밸브)에 대한 선제적 LDAR(누출탐지 및 보수) 강화 지시.
 """
     try:
         response = client.models.generate_content(
@@ -134,7 +124,7 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
         )
         return response.text.strip()
     except Exception:
-        return "대기질 API 연동 지연으로 상세 분석을 생략합니다. 자체적인 VOCs 누출 점검을 강화해 주시기 바랍니다."
+        return "대기질 API 연동 지연으로 상세 분석을 생략합니다. 사업장 자체적인 VOCs 누출 점검을 강화해 주시기 바랍니다."
 
 def build_vector_db(uploaded_files=None, location_key="default"):
     return None
