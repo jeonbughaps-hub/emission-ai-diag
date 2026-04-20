@@ -4,23 +4,24 @@ from datetime import datetime
 
 from utils import (
     get_auto_station_and_coord, get_air_quality, get_env_office, 
-    generate_rich_advice, get_limit_ppm
+    get_limit_ppm
+    # 🚨 수정: utils에 있던 기존 generate_rich_advice는 삭제합니다.
 )
 from ai_engine import (
     extract_pdfs_from_source, build_vector_db, 
-    convert_and_mask_images, analyze_log_compliance
+    convert_and_mask_images, analyze_log_compliance,
+    generate_advanced_air_advice  # 🚨 추가: ai_engine의 강력해진 800자 조언 함수를 불러옵니다!
 )
 from pdf_generator import create_gov_report_pdf
 
 # 1. API 키 설정 (Secrets 활용)
+st.set_page_config(page_title="HAPs-AI 진단 시스템", layout="wide")
 try:
     AIRKOREA_API_KEY = st.secrets["AIRKOREA_API_KEY"]
     os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 except Exception:
     st.error("Streamlit Secrets 설정에서 API 키를 확인해주세요.")
     st.stop()
-
-st.set_page_config(page_title="HAPs-AI 진단 시스템", layout="wide")
 
 if "target_station" not in st.session_state:
     st.session_state.target_station = "내포"
@@ -39,9 +40,13 @@ with st.sidebar:
     
     st.info(f"📍 관할 측정소: {st.session_state.target_station}")
 
-# 실시간 공공데이터 연동
+# 🌐 실시간 공공데이터 연동
 air_data = get_air_quality(st.session_state.target_station, AIRKOREA_API_KEY)
-advice_text = generate_rich_advice(air_data, st.session_state.target_station)
+
+# 🚨 핵심 수정: 새롭게 만든 800자 전문가 지침 함수에 데이터 전달
+pm10_val = air_data.get('pm10Value', '-') if air_data else '-'
+o3_val = air_data.get('o3Value', '-') if air_data else '-'
+advice_text = generate_advanced_air_advice(st.session_state.target_station, pm10_val, o3_val)
 
 col1, col2 = st.columns([2, 1])
 
@@ -69,7 +74,7 @@ with col1:
                         "permit_no": "-", "biz_no": "-", "rep": "-"
                     }
                     
-                    # ★ 핵심 수정: result["parsed"]를 직접 보내지 않고, pdf_generator 구조에 맞춰 감싸서 전달
+                    # 새롭게 디자인된 대시보드가 탑재된 PDF 생성
                     pdf_bytes = create_gov_report_pdf(
                         {"parsed": result["parsed"]}, 
                         user_info, 
