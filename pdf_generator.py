@@ -1,8 +1,27 @@
 import os
+import urllib.request  # 🚨 폰트 자동 다운로드를 위해 추가된 라이브러리
 from fpdf import FPDF
 from datetime import datetime
 import re
 from utils import FONT_FILE_NAME, FONT_BOLD_NAME, BRAND_NAVY, BRAND_ACCENT, BRAND_LIGHT_BG, BRAND_HEADER_BG, SCORE_COLORS, get_env_office, get_limit_ppm
+
+# =====================================================================
+# 🚨 핵심 방어: 클라우드 서버에 한글 폰트가 없으면 자동 다운로드
+# =====================================================================
+def ensure_korean_font():
+    """Streamlit 클라우드 환경에 한글 폰트가 없을 경우 구글 폰트에서 자동 다운로드합니다."""
+    reg_url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+    bold_url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf"
+    
+    try:
+        if not os.path.exists(FONT_FILE_NAME):
+            urllib.request.urlretrieve(reg_url, FONT_FILE_NAME)
+        if not os.path.exists(FONT_BOLD_NAME):
+            urllib.request.urlretrieve(bold_url, FONT_BOLD_NAME)
+    except Exception as e:
+        print(f"폰트 다운로드 실패 (인터넷 연결 확인 필요): {e}")
+
+# =====================================================================
 
 def get_aqi_status(val, item_type):
     """수치에 따라 대기질 상태와 색상, 게이지 비율을 반환합니다."""
@@ -36,6 +55,9 @@ class ProfessionalPDF(FPDF):
         return "Nanum" if os.path.exists(FONT_FILE_NAME) else "Arial"
 
     def _reg_fonts(self):
+        # 🚨 PDF 생성 전 폰트가 존재하는지 무조건 확인하고 다운로드!
+        ensure_korean_font() 
+        
         if os.path.exists(FONT_FILE_NAME):
             self.add_font("Nanum", "",  FONT_FILE_NAME)
             bold_src = FONT_BOLD_NAME if os.path.exists(FONT_BOLD_NAME) else FONT_FILE_NAME
@@ -443,9 +465,6 @@ class ProfessionalPDF(FPDF):
                 self.set_x(10)
                 self.multi_cell(0, 6, "  " + line)
 
-# =========================================================================
-# 🚨 핵심 방어: 이 마지막 함수가 꼭 있어야 ImportError가 발생하지 않습니다!
-# =========================================================================
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일")
     data = ai_data.get("parsed", {})
