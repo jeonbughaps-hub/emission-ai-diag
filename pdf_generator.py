@@ -1,30 +1,22 @@
 import os
-import urllib.request  # 🚨 폰트 자동 다운로드를 위해 추가된 라이브러리
+import urllib.request
 from fpdf import FPDF
 from datetime import datetime
 import re
 from utils import FONT_FILE_NAME, FONT_BOLD_NAME, BRAND_NAVY, BRAND_ACCENT, BRAND_LIGHT_BG, BRAND_HEADER_BG, SCORE_COLORS, get_env_office, get_limit_ppm
 
-# =====================================================================
-# 🚨 핵심 방어: 클라우드 서버에 한글 폰트가 없으면 자동 다운로드
-# =====================================================================
 def ensure_korean_font():
-    """Streamlit 클라우드 환경에 한글 폰트가 없을 경우 구글 폰트에서 자동 다운로드합니다."""
     reg_url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
     bold_url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf"
-    
     try:
         if not os.path.exists(FONT_FILE_NAME):
             urllib.request.urlretrieve(reg_url, FONT_FILE_NAME)
         if not os.path.exists(FONT_BOLD_NAME):
             urllib.request.urlretrieve(bold_url, FONT_BOLD_NAME)
     except Exception as e:
-        print(f"폰트 다운로드 실패 (인터넷 연결 확인 필요): {e}")
-
-# =====================================================================
+        print(f"폰트 다운로드 실패: {e}")
 
 def get_aqi_status(val, item_type):
-    """수치에 따라 대기질 상태와 색상, 게이지 비율을 반환합니다."""
     try:
         v = float(val)
     except ValueError:
@@ -55,9 +47,7 @@ class ProfessionalPDF(FPDF):
         return "Nanum" if os.path.exists(FONT_FILE_NAME) else "Arial"
 
     def _reg_fonts(self):
-        # 🚨 PDF 생성 전 폰트가 존재하는지 무조건 확인하고 다운로드!
         ensure_korean_font() 
-        
         if os.path.exists(FONT_FILE_NAME):
             self.add_font("Nanum", "",  FONT_FILE_NAME)
             bold_src = FONT_BOLD_NAME if os.path.exists(FONT_BOLD_NAME) else FONT_FILE_NAME
@@ -250,42 +240,6 @@ class ProfessionalPDF(FPDF):
             self.ln()
             alt = not alt
 
-    def draw_grouped_table(self, headers, rows, col_widths, group_col_idx=0):
-        fn = self._fn()
-        self.set_fill_color(*BRAND_HEADER_BG)
-        self.set_draw_color(175, 195, 220)
-        self.set_line_width(0.2)
-        self.set_font(fn, "B", 9)
-        self.set_text_color(*BRAND_NAVY)
-        
-        for i, h in enumerate(headers): 
-            self.cell(col_widths[i], 8, h, border="TB", align="C", fill=True)
-        self.ln()
-        self.set_font(fn, "", 8.5)
-        self.set_text_color(35, 45, 60)
-        
-        if not rows: 
-            self.set_fill_color(*BRAND_LIGHT_BG)
-            self.cell(sum(col_widths), 7, "데이터 없음", border="B", align="C", fill=True)
-            self.ln()
-            return
-            
-        current_group = None
-        alt_group = False
-        for row in rows:
-            self.check_page_break(8)
-            group_val = str(row[group_col_idx])
-            if current_group is None: 
-                current_group = group_val
-            elif current_group != group_val: 
-                current_group = group_val
-                alt_group = not alt_group
-                
-            self.set_fill_color(*(BRAND_LIGHT_BG if alt_group else (255, 255, 255)))
-            for i, val in enumerate(row): 
-                self.cell(col_widths[i], 7, str(val), border="B", align="C", fill=True)
-            self.ln()
-
     def draw_visual_scorecard(self, scores_data: dict):
         fn = self._fn()
         self.check_page_break(35)
@@ -309,25 +263,20 @@ class ProfessionalPDF(FPDF):
             self.set_fill_color(255, 255, 255)
             self.set_draw_color(220, 220, 220)
             self.rect(x, start_y, block_w, 25, "FD")
-            
             self.set_fill_color(160, 230, 180)
             self.rect(x + block_w - 10, start_y + 2, 8, 8, "F")
-            
             self.set_font(fn, "B", 8)
             self.set_text_color(0, 100, 0)
             self.set_xy(x + block_w - 10, start_y + 3)
             self.cell(8, 6, str(grade), 0, 0, "C")
-            
             self.set_font(fn, "", 8)
             self.set_text_color(100, 100, 100)
             self.set_xy(x + 2, start_y + 3)
             self.cell(block_w - 12, 6, title, 0, 0, "L")
-            
             self.set_font(fn, "B", 18)
             self.set_text_color(*BRAND_NAVY)
             self.set_xy(x, start_y + 12)
             self.cell(block_w, 10, str(score), 0, 0, "C")
-            
             x += block_w + gap
             
         self.set_fill_color(150, 230, 180)
@@ -336,17 +285,14 @@ class ProfessionalPDF(FPDF):
         self.set_text_color(*BRAND_NAVY)
         self.set_xy(x, start_y + 2)
         self.cell(190 - (x - 10), 6, "종합등급", 0, 0, "C")
-        
         self.set_font(fn, "B", 24)
         self.set_text_color(0, 100, 0)
         self.set_xy(x, start_y + 9)
         self.cell(190 - (x - 10), 10, str(overall_grade), 0, 0, "C")
-        
         self.set_font(fn, "", 8)
         self.set_text_color(*BRAND_NAVY)
         self.set_xy(x, start_y + 19)
         self.cell(190 - (x - 10), 5, f"총점 {overall_score}점", 0, 0, "C")
-        
         self.set_y(start_y + 30)
 
     def draw_air_quality_infographic(self, station_name: str, air_data: dict):
@@ -367,28 +313,23 @@ class ProfessionalPDF(FPDF):
         self.set_text_color(*BRAND_NAVY)
         self.cell(0, 6, f"실시간 대기질 지수 현황 대시보드 (관할: {station_name})")
 
-        # --- 1. 오존 (O3) 카드 ---
         self.set_fill_color(255, 255, 255)
         self.set_draw_color(210, 220, 230)
         self.rect(15, start_y + 13, 80, 28, "FD")
-        
         self.set_xy(20, start_y + 16)
         self.set_font(fn, "B", 10)
         self.set_text_color(70, 80, 95)
         self.cell(30, 6, "오존 (O3)", 0, 0, "L")
-        
         self.set_font(fn, "B", 15)
         self.set_text_color(40, 50, 60)
         self.set_xy(20, start_y + 23)
         self.cell(30, 8, f"{o3_str} ppm", 0, 0, "L")
-        
         self.set_fill_color(*o3_color)
         self.rect(72, start_y + 16, 18, 6, "F")
         self.set_xy(72, start_y + 16.5)
         self.set_font(fn, "B", 9)
         self.set_text_color(255, 255, 255)
         self.cell(18, 5, o3_stat, 0, 0, "C")
-        
         bar_w = 55
         bar_x = 20
         bar_y = start_y + 35
@@ -401,28 +342,23 @@ class ProfessionalPDF(FPDF):
         self.set_xy(bar_x + bar_w + 3, bar_y - 1.5)
         self.cell(10, 5, "기준: 0.09", 0, 0, "L")
 
-        # --- 2. 미세먼지 (PM10) 카드 ---
         self.set_fill_color(255, 255, 255)
         self.set_draw_color(210, 220, 230)
         self.rect(105, start_y + 13, 80, 28, "FD")
-        
         self.set_xy(110, start_y + 16)
         self.set_font(fn, "B", 10)
         self.set_text_color(70, 80, 95)
         self.cell(30, 6, "미세먼지 (PM10)", 0, 0, "L")
-        
         self.set_font(fn, "B", 15)
         self.set_text_color(40, 50, 60)
         self.set_xy(110, start_y + 23)
         self.cell(30, 8, f"{pm10_str} ㎍/m³", 0, 0, "L")
-        
         self.set_fill_color(*pm10_color)
         self.rect(162, start_y + 16, 18, 6, "F")
         self.set_xy(162, start_y + 16.5)
         self.set_font(fn, "B", 9)
         self.set_text_color(255, 255, 255)
         self.cell(18, 5, pm10_stat, 0, 0, "C")
-        
         bar_w2 = 55
         bar_x2 = 110
         bar_y2 = start_y + 35
@@ -510,16 +446,14 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 65, 25, 25, 25])
     
     pdf.draw_sub_header("2) 비산누출시설 LDAR 점검 실적")
-    ldar_rows = [[p.get("year","-"), p.get("target_count","-"), p.get("leak_count","-"), p.get("leak_rate","-"), p.get("recheck_done","-"), p.get("result","-")] for p in data.get("ldar", {}).get("data", [])]
-    if not ldar_rows: 
-        ldar_rows = [["2022", "135", "0", "0%", "이행완료", "적합"]]
+    # 🚨 더미 데이터 생성 로직 완전 삭제! 
+    ldar_rows = [[str(p.get("year","-")), str(p.get("target_count","-")), str(p.get("leak_count","-")), str(p.get("leak_rate","-")), str(p.get("recheck_done","-")), str(p.get("result","-"))] for p in data.get("ldar", {}).get("data", [])]
     pdf.draw_zebra_table(["점검 연도", "대상 개소", "누출 수", "누출률", "재측정/조치", "최종 판정"], ldar_rows, [30, 35, 30, 30, 35, 30])
     
     pdf.draw_section_header("마. 위험도 매트릭스 및 행정처분 가능성 평가")
     pdf.draw_sub_header("1) 항목별 위험도 평가")
-    risk_rows = [[p.get("item","-"), p.get("probability","-"), p.get("impact","-"), p.get("priority","-")] for p in data.get("risk_matrix", [])]
-    if not risk_rows: 
-        risk_rows = [["시설관리", "보통", "높음", "Medium"]]
+    # 🚨 더미 데이터 생성 로직 완전 삭제! 
+    risk_rows = [[str(p.get("item","-")), str(p.get("probability","-")), str(p.get("impact","-")), str(p.get("priority","-"))] for p in data.get("risk_matrix", [])]
     pdf.draw_zebra_table(["위험 항목", "발생 가능성", "영향도", "우선순위"], risk_rows, [50, 40, 40, 60])
     
     pdf.draw_sub_header("2) 현 관리 수준 기준 행정처분 예상 시나리오")
@@ -532,9 +466,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     
     pdf.draw_section_header("바. AI 정밀 진단 종합 의견 및 중장기 로드맵")
     pdf.draw_sub_header("1) 중장기 개선 로드맵")
-    roadmap_rows = [[p.get("phase","-"), p.get("action","-"), p.get("expected_effect","-")] for p in data.get("improvement_roadmap", [])]
-    if not roadmap_rows: 
-        roadmap_rows = [["단기", "시설 점검", "운영 안정화"]]
+    # 🚨 더미 데이터 생성 로직 완전 삭제! 
+    roadmap_rows = [[str(p.get("phase","-")), str(p.get("action","-")), str(p.get("expected_effect","-"))] for p in data.get("improvement_roadmap", [])]
     pdf.draw_zebra_table(["단계/기간", "주요 개선 조치", "기대 효과"], roadmap_rows, [30, 90, 70])
     
     pdf.draw_sub_header("2) AI 정밀 진단 종합 의견")
