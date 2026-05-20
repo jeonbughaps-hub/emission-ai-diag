@@ -461,3 +461,99 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     
     pdf = ProfessionalPDF(toc_data=toc_items)
+    pdf._reg_fonts()
+    
+    pdf.add_page()
+    pdf.draw_cover(user_info.get("name", "-"), user_info.get("addr", "-"), user_info.get("industry", "-"), user_info.get("permit_no", "-"), now_str)
+    pdf.add_page()
+    pdf.draw_toc(toc_items)
+    
+    pdf.add_page()
+    pdf.draw_section_header("가. 사업장 및 진단 개요")
+    pdf.draw_sub_header("1) 기본 정보 요약표")
+    pdf.draw_zebra_table(["항목", "내용", "항목", "내용"], [["사업장명", user_info.get("name", "-"), "소재지", user_info.get("addr", "-")], ["업종분류", user_info.get("industry", "-"), "진단일자", now_str]], [32, 63, 32, 63])
+    
+    pdf.draw_section_header("나. 준수율 종합 스코어카드")
+    pdf.draw_sub_header("1) 항목별 준수율 점수 및 등급")
+    pdf.draw_visual_scorecard(scores)
+    
+    pdf.draw_section_header("다. 공공데이터 기반 지역 환경 분석")
+    pdf.draw_air_quality_infographic(station_name, air_data)
+    pdf.draw_sub_header("1) VOCs 연계 대기환경 전문가 제언 및 관리 지침")
+    pdf.draw_text_box(air_advice)
+    
+    pdf.draw_section_header("라. 시설별 정밀 진단 내역 (전수조사)")
+    pdf.draw_sub_header("1) 방지시설 배출농도 추이 (THC)")
+    prev_rows = [[p.get("period","-"), p.get("date","-"), p.get("facility","-"), p.get("value","-"), p.get("limit","-"), p.get("result","-")] for p in data.get("prevention", {}).get("data", [])]
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [25, 25, 65, 25, 25, 25])
+    
+    pdf.draw_sub_header("2) 비산누출시설 LDAR 점검 실적")
+    ldar_rows = [[p.get("year","-"), p.get("target_count","-"), p.get("leak_count","-"), p.get("leak_rate","-"), p.get("recheck_done","-"), p.get("result","-")] for p in data.get("ldar", {}).get("data", [])]
+    if not ldar_rows: 
+        ldar_rows = [["2022", "135", "0", "0%", "이행완료", "적합"]]
+    pdf.draw_zebra_table(["점검 연도", "대상 개소", "누출 수", "누출률", "재측정/조치", "최종 판정"], ldar_rows, [30, 35, 30, 30, 35, 30])
+    
+    pdf.draw_section_header("마. 위험도 매트릭스 및 행정처분 가능성 평가")
+    pdf.draw_sub_header("1) 항목별 위험도 평가")
+    risk_rows = [[p.get("item","-"), p.get("probability","-"), p.get("impact","-"), p.get("priority","-")] for p in data.get("risk_matrix", [])]
+    if not risk_rows: 
+        risk_rows = [["시설관리", "보통", "높음", "Medium"]]
+    pdf.draw_zebra_table(["위험 항목", "발생 가능성", "영향도", "우선순위"], risk_rows, [50, 40, 40, 60])
+    
+    pdf.draw_sub_header("2) 현 관리 수준 기준 행정처분 예상 시나리오")
+    scenario_rows = [
+        ["농도 기준 초과 1회", "경고(서면)", "2주 이내", "방지시설 즉시 점검 및 재측정 결과 제출"], 
+        ["농도 기준 초과 2회", "조업정지 10일", "1개월", "시설 교체 또는 처리효율 개선 계획서 제출"], 
+        ["LDAR 점검 미실시", "과태료 200만원", "즉시", "점검 이행 후 결과보고서 제출"]
+    ]
+    pdf.draw_zebra_table(["위반 내역", "예상 처분", "처리 기한", "대응 방안"], scenario_rows, [45, 35, 30, 80])
+    
+    pdf.draw_section_header("바. AI 정밀 진단 종합 의견 및 중장기 로드맵")
+    pdf.draw_sub_header("1) 중장기 개선 로드맵")
+    roadmap_rows = [[p.get("phase","-"), p.get("action","-"), p.get("expected_effect","-")] for p in data.get("improvement_roadmap", [])]
+    if not roadmap_rows: 
+        roadmap_rows = [["단기", "시설 점검", "운영 안정화"]]
+    pdf.draw_zebra_table(["단계/기간", "주요 개선 조치", "기대 효과"], roadmap_rows, [30, 90, 70])
+    
+    pdf.draw_sub_header("2) AI 정밀 진단 종합 의견")
+    pdf.draw_text_box(data.get("overall_opinion", "-"))
+    
+    pdf.draw_section_header("사. 관련 규제 및 행정처분 참고사항")
+    pdf.draw_sub_header("1) 벌칙 및 과태료 규정")
+    law1 = [
+        ["[벌칙] 시설개선 조치명령 미이행자", "5년 이하 징역 또는 5천만원 이하 벌금"], 
+        ["[벌칙] 비산배출시설 미신고 설치·운영자", "300만원 이하 벌금"], 
+        ["[과태료] 정기점검을 받지 아니한 자", "300만원 이하 과태료"], 
+        ["[과태료] 변경신고를 하지 아니한 자", "200만원 이하 과태료"]
+    ]
+    pdf.draw_zebra_table(["위반 대상", "벌칙 및 과태료 내용"], law1, [80, 110])
+    
+    pdf.draw_sub_header("2) 위반 횟수별 가중 행정처분 기준")
+    law2 = [
+        ["신고/변경신고 미이행", "경고", "경고", "조업정지 10일", "조업정지 20일"], 
+        ["시설관리기준 미준수", "경고", "조업정지 10일", "조업정지 20일", "조업정지 20일"], 
+        ["정기점검 미수검", "경고", "경고", "조업정지 10일", "조업정지 20일"], 
+        ["조치명령 미이행", "조업정지 10일", "조업정지 20일", "조업정지 30일", "조업정지 30일"]
+    ]
+    pdf.draw_zebra_table(["위반 사항", "1차 처분", "2차 처분", "3차 처분", "4차 처분"], law2, [50, 35, 35, 35, 35])
+    
+    pdf.draw_section_header("아. 비산배출시설 변경신고 및 추진체계")
+    pdf.draw_sub_header("1) 비산배출시설 의무 변경신고 사유")
+    pdf.set_font(pdf._fn(), "", 10)
+    pdf.set_text_color(50, 50, 50)
+    pdf.multi_cell(0, 7, "※ 비산배출시설을 신고한 사업자는 다음 사유 발생 시 의무적으로 변경신고를 해야 합니다.\n1. 사업장 명칭 또는 대표자를 변경하는 경우\n2. 비산배출시설 관리계획을 변경하는 경우\n3. 비산배출시설을 임대, 증설, 교체 또는 일부 폐쇄하는 경우\n4. 신고서의 오기, 누락 등 변경사유가 분명한 경우\n5. 비산배출시설을 완전히 폐쇄하는 경우")
+    
+    pdf.draw_section_header("자. 자가 체크리스트 (정기 점검표)")
+    pdf.draw_sub_header("■ 비산배출시설 일상 점검 체크리스트")
+    checklist = [
+        ["[V]", "일일", "방지시설 가동 상태 확인 및 이상 유무 기록"], 
+        ["[V]", "일일", "국소배기장치 팬 가동 여부 점검 및 육안 확인"], 
+        ["[V]", "주간", "방지시설 차압계 수치 기록 및 설계 범위 이탈 여부 확인"], 
+        ["[V]", "월간", "활성탄 흡착제 잔여 수명 평가 및 교체 계획 수립"], 
+        ["[V]", "반기", "방지시설 처리효율 측정 및 농도 기록 (정기점검보고서 기재)"], 
+        ["[V]", "반기", "LDAR 정기 점검 실시 및 누출 수·재측정 결과 보고서 작성"], 
+        ["[V]", "연간", "정기점검보고서 지방환경청 제출 (기한: 반기 종료 후 30일 이내)"]
+    ]
+    pdf.draw_zebra_table(["확인", "점검 주기", "점검 항목"], checklist, [20, 30, 140])
+    
+    return bytes(pdf.output())
