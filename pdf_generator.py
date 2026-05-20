@@ -443,6 +443,9 @@ class ProfessionalPDF(FPDF):
                 self.set_x(10)
                 self.multi_cell(0, 6, "  " + line)
 
+# =========================================================================
+# 🚨 핵심 방어: 이 마지막 함수가 꼭 있어야 ImportError가 발생하지 않습니다!
+# =========================================================================
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
     now_str = datetime.now().strftime("%Y년 %m월 %d일")
     data = ai_data.get("parsed", {})
