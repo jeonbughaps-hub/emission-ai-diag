@@ -44,13 +44,13 @@ def convert_and_mask_images(pdf_list):
             fbytes.seek(0)
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for i, page in enumerate(doc):
-                # 🚨 해상도를 1.5로 올려 깨알 같은 범위 기호(~) 복원 (메모리는 GC로 철저히 방어)
+                # 해상도 1.5 유지 (작은 글씨 판독용)
                 pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
                 img = Image.open(io.BytesIO(pix.tobytes("jpeg", 80)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
                 del pix
-                gc.collect() # 페이지당 즉시 메모리 청소로 96페이지도 안전하게 통과!
+                gc.collect() 
             doc.close()
         except Exception: continue
     my_bar.empty()
@@ -71,18 +71,25 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # 🚨 동신 사업장 등 특이 양식 완벽 대응을 위한 유연한 하이브리드 프롬프트
+    # 🚨 [핵심 업데이트] AI의 게으름(Laziness)을 차단하는 다년도 전수조사 강제 프롬프트
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 최우선 지시사항 : 특이 양식(범위 표기, 방대한 원시 데이터) 대처법 ★]
-1. 방지시설 농도 (prevention) 추출 규칙:
-   - 측정결과가 '41.4'처럼 단일 숫자가 아니라, '34.0~287.0'처럼 범위(Range)로 기재되어 있어도 절대 무시하지 말고 그대로 추출하세요.
-   - 단, '비전테크', '코엔라이프' 등 외부 대행업체 이름은 시설명에서 빼주세요.
-2. LDAR 누출 점검 (ldar) 실제 측정 개소 산출 규칙:
-   - 앞쪽의 '요약표'가 비어있거나 '해당없음'으로 기재되어 있어도 절대 추출을 포기하거나 빈 배열([])을 넘기지 마세요.
-   - 문서 뒷부분(보통 40페이지 이후)에 수십 장에 걸쳐 첨부된 '측정성적서(원시 데이터)' 페이지들을 확인하여, 실제 측정값이 기재된 포인트(관리번호)들의 총 개수를 꼼꼼히 합산 및 추정하여 'target_count'에 기입하세요.
-   - 측정값이 기재된 원시 데이터가 확인된다면 누출률은 '0%', 이행 여부는 '이행완료'로 기입하여 보고서 표를 채우세요.
+[★ 최우선 지시사항 : 대규모 문서 100% 전수조사 및 요약/누락 절대 금지 ★]
+1. AI 분석 태도 (Anti-Laziness):
+   - 문서가 수십 페이지에 달하더라도 절대 중간에 분석을 멈추거나, 임의로 데이터를 요약, 샘플링, 생략하지 마세요. 
+   - 마지막 페이지의 마지막 표까지 100% 전수 조사하여 데이터를 긁어모아야 합니다.
+
+2. 방지시설 농도 (prevention) 무한 추출 규칙:
+   - 여러 연도와 여러 반기에 걸쳐 측정된 '모든' 데이터를 빠짐없이 추출하여 배열에 무한정 담으세요.
+   - 동일한 방지시설이라도 '측정일자'가 다르면 전부 개별 건입니다. 
+   - 결과값이 '34.0~287.0' 처럼 범위로 되어있어도 절대 빼먹지 말고 그대로 추출하세요.
+
+3. LDAR 누출 점검 (ldar) 다년도 전수 카운팅 규칙:
+   - 제공된 문서에는 2021년, 2022년, 2023년 등 '여러 연도'의 점검 기록이 파일별로 나뉘어 혼재되어 있습니다.
+   - 각 '연도별'로 실제 측정값(농도)이 기재된 줄(Row)의 개수를 모든 페이지에서 찾아 누적 합산하세요.
+   - (예시: 2021년 측정 행이 150줄, 2022년이 145줄, 2023년이 160줄이라면, 배열에 각각의 연도 객체 3개를 생성하여 target_count에 정확한 합산값을 별도로 기입하세요.)
+   - 앞 페이지의 요약표가 비어있더라도 포기하지 말고, 뒷부분 원시 데이터 표에 있는 측정 행(Row) 숫자를 직접 끝까지 세어야 합니다.
 
 [전문 종합 의견 작성 지침]
 - 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요.
@@ -91,7 +98,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 [출력 JSON 구조] (반드시 이 구조를 지킬 것)
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "농도값(단일 또는 범위)", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "농도값(범위포함)", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "연도(YYYY)", "target_count": "실제측정된개소수(숫자)", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
