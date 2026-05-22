@@ -38,20 +38,24 @@ def extract_pdfs_from_source(uploaded_files):
 
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 이미지 변환 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 메모리 최적화 변환 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for i, page in enumerate(doc):
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.8, 1.8))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 75)))
+                # 🚨 메모리 최적화 1: 1.8 -> 1.25로 해상도 하향 (메모리 사용량 50% 이상 감소)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25))
+                # 🚨 메모리 최적화 2: JPEG 압축 품질 75 -> 65로 낮춤
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 65)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
                 del pix
             doc.close()
+            # 🚨 메모리 최적화 3: 문서 하나 처리가 끝날 때마다 RAM 찌꺼기 강제 청소
+            gc.collect() 
         except Exception: continue
-    gc.collect()
+    
     my_bar.empty()
     return all_images
 
@@ -70,7 +74,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # 🚨 [초강력 방어 프롬프트] 데이터 오독(코엔라이프 등) 및 -1.0 가짜 데이터 방지
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
@@ -112,7 +115,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             )
         )
         
-        # 안전한 JSON 파싱을 위한 전처리
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text.replace("```json", "", 1)
@@ -123,7 +125,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         parsed_data = json.loads(raw_text, strict=False)
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
-        # 정규식 대비책 (Fallback)
         try:
             parsed_data = json.loads(re.search(r'\{.*\}', raw_text, re.DOTALL).group(0), strict=False)
             return {"parsed": parsed_data, "raw": raw_text}
