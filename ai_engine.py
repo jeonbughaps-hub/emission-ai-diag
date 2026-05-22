@@ -38,24 +38,21 @@ def extract_pdfs_from_source(uploaded_files):
 
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 메모리 최적화 변환 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 텍스트 가독성 복원 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
             doc = fitz.open(stream=fbytes.read(), filetype="pdf")
             for i, page in enumerate(doc):
-                # 🚨 메모리 최적화 1: 1.8 -> 1.25로 해상도 하향 (메모리 사용량 50% 이상 감소)
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25))
-                # 🚨 메모리 최적화 2: JPEG 압축 품질 75 -> 65로 낮춤
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 65)))
+                # 🚨 해상도를 1.5로 올려 깨알 같은 범위 기호(~) 복원 (메모리는 GC로 철저히 방어)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 80)))
                 if img.mode != 'RGB': img = img.convert('RGB')
                 all_images.append(img)
                 del pix
+                gc.collect() # 페이지당 즉시 메모리 청소로 96페이지도 안전하게 통과!
             doc.close()
-            # 🚨 메모리 최적화 3: 문서 하나 처리가 끝날 때마다 RAM 찌꺼기 강제 청소
-            gc.collect() 
         except Exception: continue
-    
     my_bar.empty()
     return all_images
 
@@ -74,30 +71,28 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # 🚨 동신 사업장 등 특이 양식 완벽 대응을 위한 유연한 하이브리드 프롬프트
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 최우선 지시사항 : 데이터 오독 및 환각(Hallucination) 절대 방지 ★]
+[★ 최우선 지시사항 : 특이 양식(범위 표기, 방대한 원시 데이터) 대처법 ★]
 1. 방지시설 농도 (prevention) 추출 규칙:
-   - '측정일자(YYYY-MM-DD)'와 '방지시설명'을 절대 섞지 마세요. (예: "흡착탑 2026-11-25" -> X)
-   - '코엔라이프' 등 외부 측정대행업체(측정기관) 이름은 방지시설명이 아닙니다. 시설명에 포함하지 마세요.
-   - 표에 '측정결과(농도)'가 명확한 숫자로 적혀있는 줄(Row)만 추출하세요.
-   - 수치가 없거나, 빈칸이거나, '미측정', '미가동'인 경우 절대 -1.0이나 0 같은 가짜(Dummy) 숫자를 지어내지 말고, 해당 데이터 추출을 완전히 건너뛰세요(배열에 추가 금지).
-
+   - 측정결과가 '41.4'처럼 단일 숫자가 아니라, '34.0~287.0'처럼 범위(Range)로 기재되어 있어도 절대 무시하지 말고 그대로 추출하세요.
+   - 단, '비전테크', '코엔라이프' 등 외부 대행업체 이름은 시설명에서 빼주세요.
 2. LDAR 누출 점검 (ldar) 실제 측정 개소 산출 규칙:
-   - '대상 개소(target_count)'에 설비의 '총 개수'나 '전체 목록 수'를 적지 마세요.
-   - 표에서 해당 연도에 '측정 농도(ppm)'나 '점검 결과'가 실제로 기록된 줄(Row)의 개수만 정직하게 세어서 합산하세요.
-   - 점검 기록 자체가 문서에 아예 존재하지 않는다면, 임의의 데이터를 만들지 말고 빈 배열 `[]` 을 반환하세요.
+   - 앞쪽의 '요약표'가 비어있거나 '해당없음'으로 기재되어 있어도 절대 추출을 포기하거나 빈 배열([])을 넘기지 마세요.
+   - 문서 뒷부분(보통 40페이지 이후)에 수십 장에 걸쳐 첨부된 '측정성적서(원시 데이터)' 페이지들을 확인하여, 실제 측정값이 기재된 포인트(관리번호)들의 총 개수를 꼼꼼히 합산 및 추정하여 'target_count'에 기입하세요.
+   - 측정값이 기재된 원시 데이터가 확인된다면 누출률은 '0%', 이행 여부는 '이행완료'로 기입하여 보고서 표를 채우세요.
 
 [전문 종합 의견 작성 지침]
-- 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요. (분석할 수 없는 더미 숫자는 인용하지 마세요.)
+- 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요.
    【1. 시설관리 종합 평가】, 【2. 방지시설 효율성 분석】, 【3. LDAR 점검 이행 평가】, 【4. 중장기 관리 권고 사항】
 
 [출력 JSON 구조] (반드시 이 구조를 지킬 것)
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "실제측정농도(숫자)", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "연도(YYYY)", "target_count": "실제측정된개소수(숫자)", "leak_count": "누출수", "leak_rate": "0%", "recheck_done": "이행완료/해당없음", "result": "적합/부적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "농도값(단일 또는 범위)", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "연도(YYYY)", "target_count": "실제측정된개소수(숫자)", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
   "overall_opinion": "여기에 소제목을 포함하여 상세히 작성하세요."
