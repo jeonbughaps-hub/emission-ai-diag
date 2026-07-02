@@ -1,14 +1,9 @@
 streamlit
-google-generativeai
-PyMuPDF
+google-genai
+pymupdf
 Pillow
-requests
-pandas
 fpdf2
-langchain-community
-langchain-text-splitters
-langchain-core
-langchain-google-genai
+requests
 langchain
 langchain-google-genai
 langchain-community
