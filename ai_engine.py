@@ -39,7 +39,6 @@ def build_vector_db(uploaded_kb_file):
 
     kb_text = ""
     try:
-        # ZIP 파일 내부의 모든 PDF 텍스트 추출
         with zipfile.ZipFile(io.BytesIO(uploaded_kb_file.read())) as z:
             for inner_file in z.namelist():
                 if "__MACOSX" in inner_file or inner_file.split("/")[-1].startswith("."): continue
@@ -56,11 +55,11 @@ def build_vector_db(uploaded_kb_file):
     if not kb_text.strip(): return False
 
     try:
-        # 텍스트 분할 및 FAISS DB 생성 후 로컬 저장
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_text(kb_text)
 
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+        # 🚨 수정된 부분: 최신 모델인 text-embedding-004 적용
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
         vector_db = FAISS.from_texts(chunks, embeddings)
         vector_db.save_local(FAISS_DB_DIR)
         return True
@@ -78,7 +77,8 @@ def load_vector_db():
             
     if os.path.exists(FAISS_DB_DIR):
         try:
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+            # 🚨 수정된 부분: 최신 모델인 text-embedding-004 적용
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
             vector_db = FAISS.load_local(FAISS_DB_DIR, embeddings, allow_dangerous_deserialization=True)
             return vector_db
         except:
