@@ -150,16 +150,16 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except:
             retrieved_knowledge = ""
 
-    # 🚨 XML 태그를 적용하여 게으름(Laziness)을 원천 차단한 강력한 프롬프트
+    # 마크다운 렌더링 충돌을 막기 위해 프롬프트 내부 기호를 안전하게 수정했습니다.
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-아래 <지시사항>을 엄격히 준수하여 <출력형식>의 JSON으로만 답변하세요.
+아래 <지시사항>을 엄격히 준수하여 <출력형식>의 순수 JSON 포맷으로만 답변하세요.
 
 <지시사항>
 1. 데이터 100% 전수조사 추출 (가장 최우선 임무)
-- 🚨 절대 제공된 예시 JSON 껍데기만 출력하지 마세요! 첨부된 문서 이미지 표를 끝까지 읽고 '실제 데이터'를 찾아 배열을 채워야 합니다.
-- 방지시설 농도 (prevention): 제공된 표의 칼럼 중 '측정일시', '시설명', '측정결과 후단'(이 값이 실제 배출농도입니다)을 모두 찾아 빠짐없이 배열에 담으세요. (예: 5.4, 34.8 등 추출)
+- 절대 제공된 예시 JSON 껍데기만 출력하지 마세요! 첨부된 문서 이미지 표를 끝까지 읽고 '실제 데이터'를 찾아 배열을 채워야 합니다.
+- 방지시설 농도 (prevention): 제공된 표의 칼럼 중 '측정일시', '시설명', '측정결과 후단'(이 값이 실제 배출농도입니다)을 모두 찾아 빠짐없이 배열에 담으세요.
 - LDAR 누출 점검 (ldar): 연도별로 실제 점검 측정값이 기록된 행(Row)의 개수를 직접 세어 target_count에 기입하세요.
 
 2. 종합 의견 작성
@@ -172,12 +172,70 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 </지식베이스>
 
 <출력형식>
-```json
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2025", "target_count": "측정행개수합산", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "YYYY-MM-DD", "facility": "방지시설명", "value": "농도값", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "YYYY", "target_count": "측정행개수합산", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
   "overall_opinion": "여기에 지식베이스를 활용하여 상세히 작성"
 }}
+</출력형식>
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[prompt] + measure_images,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0, 
+                max_output_tokens=8192,
+                safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
+            )
+        )
+        
+        raw_text = response.text.strip()
+        
+        # 채팅창 코드 블록 파괴를 막기 위해 파이썬 문자열 연산으로 우회 처리
+        json_prefix = "`" * 3 + "json"
+        suffix = "`" * 3
+        
+        if raw_text.startswith(json_prefix):
+            raw_text = raw_text.replace(json_prefix, "", 1)
+            if raw_text.endswith(suffix):
+                raw_text = raw_text[:-3]
+        
+        try:
+            parsed_data = json.loads(raw_text.strip(), strict=False)
+        except Exception:
+            parsed_data = json.loads(re.search(r'\{.*\}', raw_text, re.DOTALL).group(0), strict=False)
+            
+        return {"parsed": parsed_data, "raw": raw_text}
+    except Exception as e:
+        return {"parsed": {}, "raw": f"파싱 에러: {str(e)}"}
+
+def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
+    api_key = get_api_key()
+    if not api_key: return "대기질 API 키 설정 오류로 상세 분석을 생략합니다."
+            
+    client = genai.Client(api_key=api_key)
+    
+    prompt = f"""
+당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
+관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
+이 사업장은 '유기용제(VOCs)'를 다량 취급하는 비산배출시설입니다.
+
+아래 3가지 소제목을 사용하여 총 800자 분량의 전문적인 '환경 관리 지침'을 작성하세요.
+【1. 지역 대기질 현황 및 광화학적 영향 분석】
+【2. 현장 비산배출원 선제적 통제 가이드】
+【3. 방지시설 및 LDAR 연계 집중 관리 방안】
+"""
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=[prompt],
+            config=types.GenerateContentConfig(temperature=0.4, max_output_tokens=1024)
+        )
+        return response.text.strip()
+    except Exception:
+        return "AI 모델 과부하(Rate Limit)로 전문가 제언 생성을 일시 생략합니다. 자체 점검을 강화해 주시기 바랍니다."
