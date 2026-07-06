@@ -11,6 +11,7 @@ from datetime import datetime
 import gc 
 import warnings
 import zipfile 
+import time  # API 과부하 방지를 위한 휴식 모듈 추가
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -24,7 +25,6 @@ FAISS_DB_DIR = "faiss_vector_db"
 # 🧠 1. 지식베이스 구축 및 로드 (RAG 시스템)
 # =====================================================================
 def get_api_key():
-    """환경변수와 Secrets에서 API 키를 안전하게 불러오는 통합 함수"""
     key = os.environ.get("GOOGLE_API_KEY")
     if not key:
         try:
@@ -38,7 +38,7 @@ def build_vector_db(uploaded_kb_file):
     
     api_key = get_api_key()
     if not api_key:
-        st.error("API 키를 찾을 수 없습니다. (Secrets 설정을 확인하세요)")
+        st.error("API 키를 찾을 수 없습니다.")
         return False
 
     kb_text = ""
@@ -103,12 +103,12 @@ def extract_pdfs_from_source(uploaded_files):
                             pdf_bytes = z.read(inner_file)
                             pdf_list.append((inner_file, io.BytesIO(pdf_bytes)))
             except Exception as e:
-                st.error(f"ZIP 파일 압축 해제 중 오류: {e}")
+                st.error(f"ZIP 압축 해제 중 오류: {e}")
     return pdf_list
 
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 텍스트 가독성 복원 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 스캔 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
@@ -133,10 +133,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
-        limit_val = 100
         limit_text = "100ppm"
     else:
-        limit_val = 50
         limit_text = "50ppm"
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -144,43 +142,36 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     retrieved_knowledge = ""
     if vector_db is not None:
         try:
-            search_query = f"비산배출시설 {user_industry} 방지시설 관리기준 및 LDAR 누출 점검 행정처분 규정"
+            search_query = f"비산배출시설 {user_industry} 방지시설 관리기준 및 행정처분"
             docs = vector_db.similarity_search(search_query, k=3)
             retrieved_knowledge = "\n".join([doc.page_content for doc in docs])
         except:
             retrieved_knowledge = ""
 
-    # 마크다운 렌더링 충돌을 막기 위해 프롬프트 내부 기호를 안전하게 수정했습니다.
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-아래 <지시사항>을 엄격히 준수하여 <출력형식>의 순수 JSON 포맷으로만 답변하세요.
+[★ 데이터 100% 전수조사 추출 규칙 ★]
+1. 문서 이미지 내 '나. 직접연소에 의한 시설, 회수에 의한 시설...' 표를 찾으세요.
+2. 아래 칼럼들을 매핑하여 `prevention` 배열에 데이터를 모두 추출하세요.
+   - 문서의 [측정일시] -> date
+   - 문서의 [시설명] -> facility
+   - 문서의 [측정결과 후단] 숫자 -> value
+3. 🚨 경고: 예시용 단어(YYYY-MM-DD 등)를 절대 그대로 출력하지 마세요. 문서에 측정된 데이터가 10개면 JSON 배열 항목도 10개가 되어야 합니다.
 
-<지시사항>
-1. 데이터 100% 전수조사 추출 (가장 최우선 임무)
-- 절대 제공된 예시 JSON 껍데기만 출력하지 마세요! 첨부된 문서 이미지 표를 끝까지 읽고 '실제 데이터'를 찾아 배열을 채워야 합니다.
-- 방지시설 농도 (prevention): 제공된 표의 칼럼 중 '측정일시', '시설명', '측정결과 후단'(이 값이 실제 배출농도입니다)을 모두 찾아 빠짐없이 배열에 담으세요.
-- LDAR 누출 점검 (ldar): 연도별로 실제 점검 측정값이 기록된 행(Row)의 개수를 직접 세어 target_count에 기입하세요.
+[★ 지식베이스 ★]
+{retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
 
-2. 종합 의견 작성
-- 아래 <지식베이스> 영역의 법규/매뉴얼 내용만을 인용하여 객관적이고 전문적인 진단 의견을 작성하세요.
-- 4가지 소제목(시설관리 종합 평가, 방지시설 효율성 분석, LDAR 점검 이행 평가, 중장기 관리 권고 사항)으로 800자 내외로 작성.
-</지시사항>
-
-<지식베이스>
-{retrieved_knowledge if retrieved_knowledge else "제공된 지식베이스가 없습니다. 법적 근거 생략."}
-</지식베이스>
-
-<출력형식>
+[출력형식]
+반드시 아래 JSON 구조로만 출력하세요. 마크다운(` ```json `)을 포함하지 말고 순수 중괄호 {{ 로 시작하세요.
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "YYYY-MM-DD", "facility": "방지시설명", "value": "농도값", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "YYYY", "target_count": "측정행개수합산", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "실제측정일", "facility": "실제시설명", "value": "실제농도값", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "실제연도", "target_count": "합산개소", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
-  "overall_opinion": "여기에 지식베이스를 활용하여 상세히 작성"
+  "overall_opinion": "위 지식베이스를 활용하여 전문적인 종합 의견을 800자 분량으로 상세히 작성하세요."
 }}
-</출력형식>
 """
     try:
         response = client.models.generate_content(
@@ -189,20 +180,14 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.0, 
-                max_output_tokens=8192,
-                safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
+                max_output_tokens=8192
             )
         )
         
         raw_text = response.text.strip()
-        
-        # 채팅창 코드 블록 파괴를 막기 위해 파이썬 문자열 연산으로 우회 처리
-        json_prefix = "`" * 3 + "json"
-        suffix = "`" * 3
-        
-        if raw_text.startswith(json_prefix):
-            raw_text = raw_text.replace(json_prefix, "", 1)
-            if raw_text.endswith(suffix):
+        if raw_text.startswith("```json"):
+            raw_text = raw_text.replace("```json", "", 1)
+            if raw_text.endswith("```"):
                 raw_text = raw_text[:-3]
         
         try:
@@ -215,6 +200,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         return {"parsed": {}, "raw": f"파싱 에러: {str(e)}"}
 
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
+    # API 호출 한도 초과 방지를 위한 3초 대기 
+    time.sleep(3)
+    
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류로 상세 분석을 생략합니다."
             
