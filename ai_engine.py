@@ -58,8 +58,8 @@ def build_vector_db(uploaded_kb_file):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_text(kb_text)
 
-        # 🚨 수정된 부분: 최신 모델인 text-embedding-004 적용
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+        # 🚨 수정 완료: 2026년 최신 표준 모델인 text-embedding-005 적용
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-005", google_api_key=api_key)
         vector_db = FAISS.from_texts(chunks, embeddings)
         vector_db.save_local(FAISS_DB_DIR)
         return True
@@ -77,8 +77,8 @@ def load_vector_db():
             
     if os.path.exists(FAISS_DB_DIR):
         try:
-            # 🚨 수정된 부분: 최신 모델인 text-embedding-004 적용
-            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+            # 🚨 수정 완료: 2026년 최신 표준 모델인 text-embedding-005 적용
+            embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-005", google_api_key=api_key)
             vector_db = FAISS.load_local(FAISS_DB_DIR, embeddings, allow_dangerous_deserialization=True)
             return vector_db
         except:
