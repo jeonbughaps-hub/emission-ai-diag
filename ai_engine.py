@@ -175,9 +175,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 🚨 수정됨: 에러를 발생시키던 2.0-flash 대신 검증된 gemini-1.5-pro 모델 사용
+        # 🚨 [핵심 수정] 권한 문제 없이 어디서나 무조건 작동하는 가장 안정적인 모델로 변경
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-1.5-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(temperature=0.0)
         )
@@ -220,9 +220,9 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        # 🚨 수정됨: 에러를 발생시키던 2.0-flash 대신 검증된 gemini-1.5-pro 모델 사용
+        # 🚨 [핵심 수정] 권한 문제 없이 어디서나 무조건 작동하는 가장 안정적인 모델로 변경
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-1.5-flash',
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.4)
         )
