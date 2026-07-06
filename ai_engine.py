@@ -1,7 +1,6 @@
 import os
 import fitz
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from PIL import Image
 import io
 import json
@@ -11,7 +10,7 @@ from datetime import datetime
 import gc 
 import warnings
 import zipfile 
-import time  # API 과부하 방지를 위한 휴식 모듈 추가
+import time
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -103,12 +102,12 @@ def extract_pdfs_from_source(uploaded_files):
                             pdf_bytes = z.read(inner_file)
                             pdf_list.append((inner_file, io.BytesIO(pdf_bytes)))
             except Exception as e:
-                st.error(f"ZIP 압축 해제 중 오류: {e}")
+                st.error(f"ZIP 파일 압축 해제 중 오류: {e}")
     return pdf_list
 
 def convert_and_mask_images(pdf_list):
     all_images = []
-    my_bar = st.progress(0.1, text="PDF 문서 스캔 중...")
+    my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 및 텍스트 가독성 복원 중...")
     for idx, (name, fbytes) in enumerate(pdf_list):
         try:
             fbytes.seek(0)
@@ -129,7 +128,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     api_key = get_api_key()
     if not api_key: return {"parsed": {}, "raw": "API 키를 확인할 수 없습니다."}
             
-    client = genai.Client(api_key=api_key)
+    # 안정적인 기존 라이브러리로 초기화
+    genai.configure(api_key=api_key)
     
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
@@ -151,43 +151,52 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 데이터 100% 전수조사 추출 규칙 ★]
-1. 문서 이미지 내 '나. 직접연소에 의한 시설, 회수에 의한 시설...' 표를 찾으세요.
-2. 아래 칼럼들을 매핑하여 `prevention` 배열에 데이터를 모두 추출하세요.
-   - 문서의 [측정일시] -> date
-   - 문서의 [시설명] -> facility
-   - 문서의 [측정결과 후단] 숫자 -> value
-3. 🚨 경고: 예시용 단어(YYYY-MM-DD 등)를 절대 그대로 출력하지 마세요. 문서에 측정된 데이터가 10개면 JSON 배열 항목도 10개가 되어야 합니다.
+아래 <지시사항>을 엄격히 준수하여 <출력형식>의 순수 JSON 포맷으로만 답변하세요.
 
-[★ 지식베이스 ★]
+<지시사항>
+1. 데이터 100% 전수조사 추출 (가장 최우선 임무)
+- 첨부된 문서 이미지 표를 끝까지 읽고 '실제 데이터'를 찾아 배열을 꽉 채워야 합니다.
+- 방지시설 농도 (prevention): 제공된 표의 칼럼 중 '측정일시', '시설명', '측정결과 후단'을 모두 추출하세요. (주의: THC 측정기기 정도검사의 기준에서 '결과' 부분은 철저히 제외하고 출력하세요.)
+- LDAR 누출 점검 (ldar): 연도별로 실제 점검 측정값이 기록된 행(Row)의 개수를 직접 세어 target_count에 기입하세요.
+- 열교환기 판정: 열교환기의 편차가 미확인(공란 등)된 경우 판정은 무조건 '판단불가'로 기재하세요.
+
+2. 종합 의견 작성
+- 아래 <지식베이스> 영역의 법규/매뉴얼 내용을 인용하여 전문적인 진단 의견을 800자 내외로 상세히 작성하세요.
+</지시사항>
+
+<지식베이스>
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
+</지식베이스>
 
-[출력형식]
-반드시 아래 JSON 구조로만 출력하세요. 마크다운(` ```json `)을 포함하지 말고 순수 중괄호 {{ 로 시작하세요.
+<출력형식>
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "실제측정일", "facility": "실제시설명", "value": "실제농도값", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "실제측정일", "facility": "실제시설명", "value": "실제농도값", "limit": "{limit_text}"}} ] }},
   "ldar": {{ "data": [ {{"year": "실제연도", "target_count": "합산개소", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
-  "overall_opinion": "위 지식베이스를 활용하여 전문적인 종합 의견을 800자 분량으로 상세히 작성하세요."
+  "overall_opinion": "여기에 지식베이스를 활용하여 상세히 작성"
 }}
+</출력형식>
 """
     try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt] + measure_images,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0, 
-                max_output_tokens=8192
+        # 대규모 문서 전수조사에 가장 강력한 gemini-1.5-pro 모델 사용
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        response = model.generate_content(
+            [prompt] + measure_images,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0,
+                response_mime_type="application/json"
             )
         )
         
         raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text.replace("```json", "", 1)
-            if raw_text.endswith("```"):
+        json_prefix = "`" * 3 + "json"
+        suffix = "`" * 3
+        
+        if raw_text.startswith(json_prefix):
+            raw_text = raw_text.replace(json_prefix, "", 1)
+            if raw_text.endswith(suffix):
                 raw_text = raw_text[:-3]
         
         try:
@@ -200,13 +209,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         return {"parsed": {}, "raw": f"파싱 에러: {str(e)}"}
 
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
-    # API 호출 한도 초과 방지를 위한 3초 대기 
     time.sleep(3)
-    
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류로 상세 분석을 생략합니다."
             
-    client = genai.Client(api_key=api_key)
+    genai.configure(api_key=api_key)
     
     prompt = f"""
 당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
@@ -219,11 +226,11 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt],
-            config=types.GenerateContentConfig(temperature=0.4, max_output_tokens=1024)
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(temperature=0.4)
         )
         return response.text.strip()
     except Exception:
-        return "AI 모델 과부하(Rate Limit)로 전문가 제언 생성을 일시 생략합니다. 자체 점검을 강화해 주시기 바랍니다."
+        return "AI 모델 통신 오류로 전문가 제언 생성을 일시 생략합니다. 자체 점검을 강화해 주시기 바랍니다."
