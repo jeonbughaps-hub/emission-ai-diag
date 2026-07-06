@@ -12,7 +12,7 @@ import gc
 import warnings
 import zipfile 
 
-# 🚨 RAG(지식베이스) 연동을 위한 LangChain 라이브러리 추가
+# 🚨 RAG(지식베이스) 연동을 위한 LangChain 라이브러리 (최신 경로 반영)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -26,11 +26,16 @@ FAISS_DB_DIR = "faiss_vector_db"
 # 🧠 1. 지식베이스 구축 및 로드 (RAG 시스템)
 # =====================================================================
 def build_vector_db(uploaded_kb_file):
-    """관리자가 업로드한 ZIP(법규/매뉴얼)을 분석하여 서버 디스크에 영구 저장합니다."""
     if not uploaded_kb_file: return False
     
+    # 환경 변수와 Streamlit Secrets 모두 안전하게 체크
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key: return False
+    if not api_key:
+        try:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+        except:
+            st.error("API 키를 찾을 수 없습니다.")
+            return False
 
     kb_text = ""
     try:
@@ -51,15 +56,12 @@ def build_vector_db(uploaded_kb_file):
     if not kb_text.strip(): return False
 
     try:
-        # 텍스트를 의미 단위로 분할 (Chunking)
+        # 텍스트 분할 및 FAISS DB 생성 후 로컬 저장
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_text(kb_text)
 
-        # 임베딩(벡터화) 후 FAISS DB 생성
         embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
         vector_db = FAISS.from_texts(chunks, embeddings)
-        
-        # 🚨 핵심: 생성된 DB를 서버 하드디스크에 영구 저장!
         vector_db.save_local(FAISS_DB_DIR)
         return True
     except Exception as e:
@@ -67,15 +69,16 @@ def build_vector_db(uploaded_kb_file):
         return False
 
 def load_vector_db():
-    """일반 사용자가 진단 시 서버 디스크에 저장된 지식베이스를 조용히 불러옵니다."""
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key: return None
-    
-    # 저장된 폴더가 존재하면 로드
+    if not api_key:
+        try:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+        except:
+            return None
+            
     if os.path.exists(FAISS_DB_DIR):
         try:
             embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
-            # allow_dangerous_deserialization=True 는 로컬에 직접 저장한 DB를 읽을 때 필요한 보안 옵션
             vector_db = FAISS.load_local(FAISS_DB_DIR, embeddings, allow_dangerous_deserialization=True)
             return vector_db
         except:
@@ -83,12 +86,13 @@ def load_vector_db():
     return None
 
 # =====================================================================
-# 📄 2. 사용자 업로드 문서 처리 및 AI 진단 (기존 로직 유지)
+# 📄 2. 사용자 업로드 문서 처리 및 AI 진단 (역할 분리 완벽 적용)
 # =====================================================================
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
     if not uploaded_files: return pdf_list
     if not isinstance(uploaded_files, list): uploaded_files = [uploaded_files]
+    
     for uf in uploaded_files:
         file_name = uf.name.lower()
         if file_name.endswith(".pdf"):
@@ -126,7 +130,12 @@ def convert_and_mask_images(pdf_list):
 
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key or not measure_images: return {"parsed": {}, "raw": ""}
+    if not api_key:
+        try:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+        except:
+            return {"parsed": {}, "raw": "API 키를 확인할 수 없습니다."}
+            
     client = genai.Client(api_key=api_key)
     
     industry_str = str(user_industry).upper()
@@ -139,40 +148,37 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # 🚨 RAG: 지식베이스에서 업종 및 규제 관련 법규 문맥 검색
+    # RAG 검색 실행
     retrieved_knowledge = ""
     if vector_db is not None:
         try:
             search_query = f"비산배출시설 {user_industry} 방지시설 관리기준 및 LDAR 누출 점검 행정처분 규정"
-            docs = vector_db.similarity_search(search_query, k=3) # 상위 3개 핵심 문서 검색
+            docs = vector_db.similarity_search(search_query, k=3)
             retrieved_knowledge = "\n".join([doc.page_content for doc in docs])
         except:
             retrieved_knowledge = ""
 
+    # 🚨 수정된 프롬프트: 1단계(데이터 추출)와 3단계(종합의견)의 완벽한 역할 분리
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 지식베이스 (참고 법규 및 환경부 매뉴얼) ★]
-{retrieved_knowledge if retrieved_knowledge else "제공된 지식베이스 없음. 기본 지식 활용."}
-
-[★ 최우선 지시사항 : 대규모 문서 100% 전수조사 및 요약/누락 절대 금지 ★]
-1. AI 분석 태도 (Anti-Laziness):
-   - 문서가 수십 페이지에 달하더라도 절대 중간에 분석을 멈추거나, 임의로 데이터를 요약, 샘플링, 생략하지 마세요. 
-   - 마지막 페이지의 마지막 표까지 100% 전수 조사하여 데이터를 긁어모아야 합니다.
-
-2. 방지시설 농도 (prevention) 무한 추출 규칙:
-   - 여러 연도와 여러 반기에 걸쳐 측정된 '모든' 데이터를 빠짐없이 추출하여 배열에 담으세요. (단, 비전테크, 코엔라이프 등 외부업체명은 시설명에서 제외)
+[★ 1단계 최우선 임무 : 대규모 문서 100% 전수조사 (지식베이스와 무관하게 첨부 이미지에서만 추출) ★]
+- 문서가 수십 페이지라도 절대 요약하거나 생략하지 말고, 100% 전수 조사하여 데이터를 긁어모으세요.
+1. 방지시설 농도 (prevention):
+   - 여러 연도/반기에 걸쳐 측정된 '모든' 데이터를 빠짐없이 추출하세요. (비전테크 등 외부업체명 제외)
    - 결과값이 '34.0~287.0' 처럼 범위로 되어있어도 절대 빼먹지 말고 그대로 추출하세요.
+2. LDAR 누출 점검 (ldar):
+   - 각 '연도별'로 실제 측정값(농도)이 기재된 줄(Row)의 개수를 모든 페이지에서 찾아 누적 합산(target_count)하세요.
+   - 요약표가 비어있더라도 뒷부분 원시 데이터 표를 직접 끝까지 세어야 합니다.
 
-3. LDAR 누출 점검 (ldar) 다년도 전수 카운팅 규칙:
-   - 제공된 문서에는 '여러 연도'의 점검 기록이 혼재되어 있습니다. 각 '연도별'로 실제 측정값(농도)이 기재된 줄(Row)의 개수를 모든 페이지에서 찾아 누적 합산하세요.
-   - 앞 페이지의 요약표가 비어있더라도, 뒷부분 원시 데이터 표에 있는 측정 행(Row) 숫자를 직접 끝까지 세어 target_count에 기입하세요.
+[★ 2단계 참고용 지식베이스 (법규 및 매뉴얼) ★]
+{retrieved_knowledge if retrieved_knowledge else "제공된 지식베이스 없음."}
 
-[전문 종합 의견 작성 지침]
-- 4가지 소제목을 사용하여 800자 내외로 상세하게 작성하세요.
-- 🚨 반드시 위 [★ 지식베이스 ★]에 제공된 법규 내용과 매뉴얼 지침을 인용하여, 객관적이고 전문적인 근거를 바탕으로 진단 의견과 로드맵을 작성하세요.
+[★ 3단계 종합 의견 작성 지침 ★]
+- 4가지 소제목(시설관리 종합 평가, 방지시설 효율성 분석, LDAR 점검 이행 평가, 중장기 관리 권고 사항)으로 800자 내외로 작성하세요.
+- 🚨 종합 의견과 로드맵 작성 시에만 위 [2단계 지식베이스]의 법규와 매뉴얼을 인용하여 전문적으로 작성하세요. (표 추출 데이터에는 지식베이스 내용을 섞지 마세요!)
 
-[출력 JSON 구조] 
+[출력 JSON 구조] (반드시 이 구조를 지킬 것)
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "농도값", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
@@ -212,7 +218,12 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
     api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key: return "대기질 정보를 불러올 수 없습니다."
+    if not api_key:
+        try:
+            api_key = st.secrets["GOOGLE_API_KEY"]
+        except:
+            return "대기질 API 연동 지연으로 상세 분석을 생략합니다. 자체 점검을 강화해 주시기 바랍니다."
+            
     client = genai.Client(api_key=api_key)
     
     prompt = f"""
