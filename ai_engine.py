@@ -150,7 +150,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except:
             retrieved_knowledge = ""
 
-    # 개발자님 룰 100% 반영 및 포맷 에러 방지 프롬프트
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 AI입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
@@ -176,16 +175,15 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # JSON 강제 옵션을 해제하여 충돌 에러(400 Bad Request) 원천 차단
+        # 🚨 수정됨: 에러를 발생시키던 2.0-flash 대신 검증된 gemini-1.5-pro 모델 사용
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-pro',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(temperature=0.0)
         )
         
         raw_text = response.text.strip()
         
-        # 텍스트에서 안전하게 JSON만 발라내는 로직
         if "```json" in raw_text:
             raw_text = raw_text.split("```json")[1].split("```")[0].strip()
         elif "```" in raw_text:
@@ -202,12 +200,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
                 
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
-        # 🚨 [중요] 구글 서버 통신 에러 발생 시 숨기지 않고 화면에 띄움
         st.error(f"1단계 데이터 추출 중 API 오류 발생: {e}")
         return {"parsed": {}, "raw": f"에러 발생: {e}"}
 
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
-    time.sleep(3) # 과부하 방지 (Rate Limit 해결)
+    time.sleep(3) 
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류."
             
@@ -223,13 +220,13 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
+        # 🚨 수정됨: 에러를 발생시키던 2.0-flash 대신 검증된 gemini-1.5-pro 모델 사용
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-pro',
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.4)
         )
         return response.text.strip()
     except Exception as e:
-        # 🚨 [중요] 제언 생성 중 에러 발생 시 원인을 화면에 띄움
         st.error(f"2단계 전문가 제언 중 API 오류 발생: {e}")
         return "AI 모델 통신 오류로 전문가 제언 생성을 일시 생략합니다."
