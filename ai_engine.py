@@ -12,30 +12,34 @@ import gc
 import warnings
 import zipfile 
 
-# 🚨 RAG(지식베이스) 연동을 위한 LangChain 라이브러리 (최신 경로 반영)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# 지식베이스(벡터 DB)가 영구 저장될 서버 내 폴더명
 FAISS_DB_DIR = "faiss_vector_db"
 
 # =====================================================================
 # 🧠 1. 지식베이스 구축 및 로드 (RAG 시스템)
 # =====================================================================
+def get_api_key():
+    """환경변수와 Secrets에서 API 키를 안전하게 불러오는 통합 함수"""
+    key = os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        try:
+            key = st.secrets.get("GOOGLE_API_KEY")
+        except:
+            return None
+    return key
+
 def build_vector_db(uploaded_kb_file):
     if not uploaded_kb_file: return False
     
-    # 환경 변수와 Streamlit Secrets 모두 안전하게 체크
-    api_key = os.environ.get("GOOGLE_API_KEY")
+    api_key = get_api_key()
     if not api_key:
-        try:
-            api_key = st.secrets["GOOGLE_API_KEY"]
-        except:
-            st.error("API 키를 찾을 수 없습니다.")
-            return False
+        st.error("API 키를 찾을 수 없습니다. (Secrets 설정을 확인하세요)")
+        return False
 
     kb_text = ""
     try:
@@ -57,8 +61,6 @@ def build_vector_db(uploaded_kb_file):
     try:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_text(kb_text)
-
-        # 🚨 [최종 수정 완료] 2026년 현재 구글 공식 임베딩 모델 명칭 적용
         embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
         vector_db = FAISS.from_texts(chunks, embeddings)
         vector_db.save_local(FAISS_DB_DIR)
@@ -68,16 +70,11 @@ def build_vector_db(uploaded_kb_file):
         return False
 
 def load_vector_db():
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        try:
-            api_key = st.secrets["GOOGLE_API_KEY"]
-        except:
-            return None
+    api_key = get_api_key()
+    if not api_key: return None
             
     if os.path.exists(FAISS_DB_DIR):
         try:
-            # 🚨 [최종 수정 완료] 2026년 현재 구글 공식 임베딩 모델 명칭 적용
             embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
             vector_db = FAISS.load_local(FAISS_DB_DIR, embeddings, allow_dangerous_deserialization=True)
             return vector_db
@@ -86,7 +83,7 @@ def load_vector_db():
     return None
 
 # =====================================================================
-# 📄 2. 사용자 업로드 문서 처리 및 AI 진단 (역할 분리 완벽 적용)
+# 📄 2. 사용자 업로드 문서 처리 및 AI 진단
 # =====================================================================
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
@@ -129,12 +126,8 @@ def convert_and_mask_images(pdf_list):
     return all_images
 
 def analyze_log_compliance(measure_images, user_industry: str, vector_db):
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        try:
-            api_key = st.secrets["GOOGLE_API_KEY"]
-        except:
-            return {"parsed": {}, "raw": "API 키를 확인할 수 없습니다."}
+    api_key = get_api_key()
+    if not api_key: return {"parsed": {}, "raw": "API 키를 확인할 수 없습니다."}
             
     client = genai.Client(api_key=api_key)
     
@@ -148,7 +141,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # RAG 검색 실행
     retrieved_knowledge = ""
     if vector_db is not None:
         try:
@@ -158,101 +150,34 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except:
             retrieved_knowledge = ""
 
-    # 🚨 수정된 프롬프트: 1단계(데이터 추출)와 3단계(종합의견)의 완벽한 역할 분리
+    # 🚨 XML 태그를 적용하여 게으름(Laziness)을 원천 차단한 강력한 프롬프트
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 엔진입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
-[★ 1단계 최우선 임무 : 대규모 문서 100% 전수조사 (지식베이스와 무관하게 첨부 이미지에서만 추출) ★]
-- 문서가 수십 페이지라도 절대 요약하거나 생략하지 말고, 100% 전수 조사하여 데이터를 긁어모으세요.
-1. 방지시설 농도 (prevention):
-   - 여러 연도/반기에 걸쳐 측정된 '모든' 데이터를 빠짐없이 추출하세요. (비전테크 등 외부업체명 제외)
-   - 결과값이 '34.0~287.0' 처럼 범위로 되어있어도 절대 빼먹지 말고 그대로 추출하세요.
-2. LDAR 누출 점검 (ldar):
-   - 각 '연도별'로 실제 측정값(농도)이 기재된 줄(Row)의 개수를 모든 페이지에서 찾아 누적 합산(target_count)하세요.
-   - 요약표가 비어있더라도 뒷부분 원시 데이터 표를 직접 끝까지 세어야 합니다.
+아래 <지시사항>을 엄격히 준수하여 <출력형식>의 JSON으로만 답변하세요.
 
-[★ 2단계 참고용 지식베이스 (법규 및 매뉴얼) ★]
-{retrieved_knowledge if retrieved_knowledge else "제공된 지식베이스 없음."}
+<지시사항>
+1. 데이터 100% 전수조사 추출 (가장 최우선 임무)
+- 🚨 절대 제공된 예시 JSON 껍데기만 출력하지 마세요! 첨부된 문서 이미지 표를 끝까지 읽고 '실제 데이터'를 찾아 배열을 채워야 합니다.
+- 방지시설 농도 (prevention): 제공된 표의 칼럼 중 '측정일시', '시설명', '측정결과 후단'(이 값이 실제 배출농도입니다)을 모두 찾아 빠짐없이 배열에 담으세요. (예: 5.4, 34.8 등 추출)
+- LDAR 누출 점검 (ldar): 연도별로 실제 점검 측정값이 기록된 행(Row)의 개수를 직접 세어 target_count에 기입하세요.
 
-[★ 3단계 종합 의견 작성 지침 ★]
-- 4가지 소제목(시설관리 종합 평가, 방지시설 효율성 분석, LDAR 점검 이행 평가, 중장기 관리 권고 사항)으로 800자 내외로 작성하세요.
-- 🚨 종합 의견과 로드맵 작성 시에만 위 [2단계 지식베이스]의 법규와 매뉴얼을 인용하여 전문적으로 작성하세요. (표 추출 데이터에는 지식베이스 내용을 섞지 마세요!)
+2. 종합 의견 작성
+- 아래 <지식베이스> 영역의 법규/매뉴얼 내용만을 인용하여 객관적이고 전문적인 진단 의견을 작성하세요.
+- 4가지 소제목(시설관리 종합 평가, 방지시설 효율성 분석, LDAR 점검 이행 평가, 중장기 관리 권고 사항)으로 800자 내외로 작성.
+</지시사항>
 
-[출력 JSON 구조] (반드시 이 구조를 지킬 것)
+<지식베이스>
+{retrieved_knowledge if retrieved_knowledge else "제공된 지식베이스가 없습니다. 법적 근거 생략."}
+</지식베이스>
+
+<출력형식>
+```json
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "구분", "date": "측정일자(YYYY-MM-DD)", "facility": "순수 방지시설명", "value": "농도값", "limit": "{limit_text}", "result": "적합/부적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "연도(YYYY)", "target_count": "실제측정된개소수(숫자)", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2025", "target_count": "측정행개수합산", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
-  "overall_opinion": "여기에 소제목을 포함하여 상세히 작성하세요."
+  "overall_opinion": "여기에 지식베이스를 활용하여 상세히 작성"
 }}
-"""
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt] + measure_images,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0, 
-                max_output_tokens=8192,
-                safety_settings=[types.SafetySetting(category=c, threshold="BLOCK_NONE") for c in ["HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
-            )
-        )
-        
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text.replace("```json", "", 1)
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-
-        parsed_data = json.loads(raw_text, strict=False)
-        return {"parsed": parsed_data, "raw": raw_text}
-    except Exception as e:
-        try:
-            parsed_data = json.loads(re.search(r'\{.*\}', raw_text, re.DOTALL).group(0), strict=False)
-            return {"parsed": parsed_data, "raw": raw_text}
-        except Exception as e2:
-            return {"parsed": {}, "raw": str(e)}
-
-def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        try:
-            api_key = st.secrets["GOOGLE_API_KEY"]
-        except:
-            return "대기질 API 연동 지연으로 상세 분석을 생략합니다. 자체 점검을 강화해 주시기 바랍니다."
-            
-    client = genai.Client(api_key=api_key)
-    
-    prompt = f"""
-당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
-관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
-이 사업장은 '유기용제(VOCs)'를 다량 취급하는 비산배출시설입니다.
-
-아래 3가지 소제목을 사용하여 **총 800자 분량**의 아주 깊이 있고 전문적인 '환경 관리 지침'을 작성하세요.
-
-【1. 지역 대기질 현황 및 광화학적 영향 분석】
-- 현재 지역 오존/미세먼지 수치의 위험도를 평가.
-- 사업장 배출 VOCs가 질소산화물(NOx)과 광화학 반응을 일으켜 오존(O3)을 생성하고, 2차 유기 에어로졸(SOA)로 변환되어 미세먼지를 가중시킨다는 점을 과학적으로 설명.
-
-【2. 현장 비산배출원 선제적 통제 가이드】
-- 오후 피크타임(14~16시) 유기용제 취급 공정 가동률 조정, 옥외 하역 밀폐 조건, 혼합 과정에서의 원천적 누출 차단 등 구체적 가이드 제공.
-
-【3. 방지시설 및 LDAR 연계 집중 관리 방안】
-- 활성탄 흡착탑 등 방지시설 처리 효율 최적화를 위한 차압 관리 및 교체 주기 준수.
-- 회전/연결 기기(플랜지, 밸브 등) 선제적 LDAR(누출탐지 및 보수) 강화 지시.
-"""
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.4, 
-                max_output_tokens=2048
-            )
-        )
-        return response.text.strip()
-    except Exception:
-        return "대기질 API 연동 지연으로 상세 분석을 생략합니다. 사업장 자체적인 VOCs 누출 점검을 강화해 주시기 바랍니다."
