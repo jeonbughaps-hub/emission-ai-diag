@@ -175,9 +175,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 가장 안정적인 범용 최신 모델 호출
+        # 🚨 [팩트 기반 수정] 2026년 현재 구글이 지원하는 최신 활성 모델 명칭 적용
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(temperature=0.0)
         )
@@ -220,8 +220,9 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
+        # 🚨 [팩트 기반 수정] 2026년 현재 구글이 지원하는 최신 활성 모델 명칭 적용
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.5-flash',
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.4)
         )
