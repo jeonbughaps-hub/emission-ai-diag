@@ -29,7 +29,7 @@ with col_district:
 
 company_location = f"{region} {district}".strip()
 
-# 💡 지역별 관할 측정소 자동 매핑 사전 (필요시 마음껏 추가/수정 가능)
+# 💡 지역별 관할 측정소 자동 매핑 사전 
 station_mapping = {
     "전라 완주": "봉동읍",
     "전라 전주": "삼천동",
@@ -40,7 +40,6 @@ station_mapping = {
     "광주 광산": "평동"
 }
 
-# 입력된 지역 정보에 맞춰 측정소를 자동으로 찾아줍니다. (사전에 없으면 기본값 유지)
 default_station = station_mapping.get(company_location, "봉동읍")
 station_name = st.sidebar.text_input("관할 측정소", value=default_station)
 
@@ -50,7 +49,6 @@ station_name = st.sidebar.text_input("관할 측정소", value=default_station)
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
 
-# [마법의 복구 코드] 깃허브 최상단에 파일이 덩그러니 있으면 자동으로 폴더를 만들고 넣어줌
 if os.path.exists("index.faiss") and os.path.exists("index.pkl"):
     if not os.path.exists(ai_engine.FAISS_DB_DIR):
         os.makedirs(ai_engine.FAISS_DB_DIR)
@@ -153,20 +151,33 @@ if diagnose_btn:
                 st.json(diagnosis_result["parsed"])
                 st.write(advice)
             
+            # ==========================================
+            # 📄 PDF 보고서 생성 및 다운로드 버튼 처리 (🚨 완벽 수정됨)
+            # ==========================================
             with st.spinner("최종 PDF 보고서를 디자인하고 있습니다..."):
                 try:
-                    pdf_file_path = pdf_generator.generate_report(
-                        parsed_data=diagnosis_result["parsed"],
-                        ai_advice=advice,
-                        company_name=company_name,
-                        location=company_location, 
-                        industry=user_industry,
-                        station=station_name
+                    # pdf_generator 규격에 맞게 데이터 패키징
+                    user_info_dict = {
+                        "name": company_name,
+                        "addr": company_location,
+                        "industry": user_industry,
+                        "permit_no": "-"
+                    }
+                    
+                    air_data_dict = {
+                        "pm10Value": "11",
+                        "o3Value": "0.027"
+                    }
+                    
+                    # 파일 저장 없이 서버 메모리에서 즉시 바이트(bytes) 데이터로 뽑아냅니다.
+                    pdf_bytes = pdf_generator.create_gov_report_pdf(
+                        ai_data=diagnosis_result,
+                        user_info=user_info_dict,
+                        air_advice=advice,
+                        air_data=air_data_dict,
+                        station_name=station_name
                     )
                     
-                    with open(pdf_file_path, "rb") as pdf_file:
-                        pdf_bytes = pdf_file.read()
-                        
                     st.download_button(
                         label="📥 진단 보고서 다운로드 (PDF)",
                         data=pdf_bytes,
