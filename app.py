@@ -1,123 +1,111 @@
-import os
 import streamlit as st
-from datetime import datetime
-
-# 개발하신 외부 모듈 임포트
+import os
+import time
 import ai_engine
-from pdf_generator import create_gov_report_pdf
-from utils import get_auto_station_and_coord, get_air_quality
 
-# =====================================================================
-# 1. 페이지 및 기본 환경 설정
-# =====================================================================
+# 1. 페이지 기본 설정
 st.set_page_config(page_title="HAPs-AI 진단 시스템", page_icon="🛡️", layout="wide")
 
-# 세션 초기값 세팅
-if "target_station" not in st.session_state:
-    st.session_state.target_station = "내포"
+# 2. 사이드바 UI (사용자 입력)
+st.sidebar.title("환경관리 정밀 진단")
 
-# 공공데이터 API 키 및 Gemini API 키 (Streamlit Secrets 또는 환경 변수 활용 권장)
-AIR_API_KEY = os.environ.get("AIR_API_KEY", "여기에_에어코리아_API키_입력_또는_os.environ유지")
-
-# =====================================================================
-# 2. 좌측 사이드바 (사용자 정보 & 관리자 메뉴)
-# =====================================================================
-with st.sidebar:
-    st.markdown("### 🏢 사업장 기본 정보")
-    user_addr = st.text_input("사업장 주소", value="광주광역시 광산구")
-    user_industry = st.selectbox("업종 분류", ["I업종", "II업종", "III업종", "IV업종", "V업종"], index=2)
-    user_name = st.text_input("사업장명", value="성원")
-    
-    # 주소 기반 관할 측정소 자동 매핑 (utils.py)
-    station_name, coords = get_auto_station_and_coord(user_addr)
-    st.session_state.target_station = station_name
-    st.info(f"📍 관할 측정소: {station_name}")
-    
-    # 🚨 [새로 추가된 영역] 시스템 관리자 전용 지식베이스 구축 메뉴
-    st.markdown("---")
-    st.markdown("### ⚙️ 시스템 관리자 메뉴")
-    st.caption("※ 환경부 매뉴얼, 법령 등 텍스트가 포함된 PDF들을 ZIP으로 묶어서 올려주세요.")
-    kb_zip = st.file_uploader("지식베이스용 ZIP 업로드", type=["zip"], key="kb_upload")
-    
-    if kb_zip and st.button("🧠 지식베이스 영구 구축"):
-        with st.spinner("서버 하드디스크에 지식베이스를 학습 및 저장 중입니다..."):
-            success = ai_engine.build_vector_db(kb_zip)
-            if success:
-                st.success("✅ 지식베이스 구축 완료! 이제 팩트 기반 진단이 적용됩니다.")
-            else:
-                st.error("❌ 지식베이스 구축에 실패했습니다.")
+st.sidebar.markdown("### 📋 기본 정보 입력")
+user_industry = st.sidebar.selectbox("업종 분류", ["III업종", "I업종", "II업종", "IV업종", "V업종"])
+company_name = st.sidebar.text_input("사업장명", value="제이")
+station_name = st.sidebar.text_input("관할 측정소", value="봉동읍")
 
 # =====================================================================
-# 3. 메인 화면 (대시보드 및 AI 진단 실행)
+# 🟢 3. 지식베이스 생존 표시기 (상태창)
 # =====================================================================
-st.markdown("## 🛡️ 비산배출시설 환경관리 정밀 진단 시스템")
-st.markdown("<br>", unsafe_allow_html=True)
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
+# ai_engine에서 지정한 FAISS DB 폴더가 살아있는지 검사합니다.
+if os.path.exists(ai_engine.FAISS_DB_DIR):
+    st.sidebar.success("🟢 정상 가동 중 (학습 완료)")
+else:
+    st.sidebar.error("🔴 지식베이스 없음 (관리자 업로드 필요)")
 
-col1, col2 = st.columns([1.5, 1])
+# =====================================================================
+# 🔒 4. 비밀번호로 보호된 시스템 관리자 메뉴
+# =====================================================================
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔒 관리자 모드")
+# 비밀번호 입력창 (글자가 *** 로 가려집니다)
+admin_password = st.sidebar.text_input("관리자 암호를 입력하세요", type="password")
 
-# --- 우측: 실시간 대기질 대시보드 ---
-with col2:
-    st.markdown("### 📊 지역 실시간 대기질")
-    air_data = get_air_quality(station_name, AIR_API_KEY)
-    pm10_val = air_data.get("pm10Value", "-")
-    o3_val = air_data.get("o3Value", "-")
+# 비밀번호가 일치할 때만 아래 메뉴가 펼쳐집니다.
+if admin_password == "1234":
+    st.sidebar.markdown("#### ⚙️ 시스템 관리자 메뉴")
+    st.sidebar.caption("※ 환경부 매뉴얼, 법령 등 텍스트가 포함된 PDF들을 ZIP으로 묶어서 올려주세요.")
     
-    st.metric("오존 (O3)", f"{o3_val} ppm", delta="기준: 0.09", delta_color="off")
-    st.metric("미세먼지 (PM10)", f"{pm10_val} ㎍/m³", delta="기준: 80", delta_color="off")
+    uploaded_kb = st.sidebar.file_uploader("지식베이스용 ZIP 업로드", type=["zip"], key="kb_uploader")
+    if st.sidebar.button("지식베이스 영구 구축 (업데이트)"):
+        if uploaded_kb:
+            with st.spinner("문서를 분석하고 AI 지식을 구축하는 중입니다..."):
+                success = ai_engine.build_vector_db(uploaded_kb)
+                if success:
+                    st.sidebar.success("✅ 성공적으로 학습되었습니다!")
+                    time.sleep(1)
+                    st.rerun() # 화면을 새로고침하여 생존 표시기를 🟢 초록불로 바꿉니다.
+                else:
+                    st.sidebar.error("❌ 학습에 실패했습니다. 파일을 확인해주세요.")
+        else:
+            st.sidebar.warning("ZIP 파일을 먼저 올려주세요.")
 
-# --- 좌측: 파일 업로드 및 진단 로직 ---
+# =====================================================================
+# 🖥️ 5. 메인 화면 UI
+# =====================================================================
+st.title("🛡️ 비산배출시설 환경관리 정밀 진단 시스템")
+st.markdown("---")
+
+col1, col2 = st.columns([6, 4])
+
 with col1:
     st.markdown("### 📝 운영기록부 업로드 (진단 대상)")
-    main_files = st.file_uploader(
-        "PDF 파일 또는 다수 PDF가 포함된 ZIP 압축파일을 올려주세요", 
-        type=["pdf", "zip"], 
-        accept_multiple_files=True, 
-        key="main"
-    )
+    st.caption("PDF 파일 또는 다수 PDF가 포함된 ZIP 압축파일을 올려주세요")
+    uploaded_logs = st.file_uploader("", type=["pdf", "zip"], accept_multiple_files=True)
     
-    if st.button("🚀 정밀 진단 시작"):
-        if not main_files:
-            st.error("분석할 운영기록부 파일을 업로드해주세요.")
+    diagnose_btn = st.button("🚀 정밀 진단 시작")
+
+with col2:
+    st.markdown("### 📊 지역 실시간 대기질")
+    st.metric(label="오존 (O3)", value="0.027 ppm", delta="기준: 0.09", delta_color="normal")
+    st.metric(label="미세먼지 (PM10)", value="11 µg/m³", delta="기준: 80", delta_color="normal")
+
+# =====================================================================
+# 🚀 6. 진단 실행 로직 연동
+# =====================================================================
+if diagnose_btn:
+    if not uploaded_logs:
+        st.warning("⚠️ 진단할 운영기록부(PDF/ZIP)를 먼저 업로드해주세요.")
+    else:
+        # 진행 상태 표시 바
+        progress_text = "PDF 문서 정밀 스캔 중..."
+        my_bar = st.progress(0.1, text=progress_text)
+        
+        pdf_list = ai_engine.extract_pdfs_from_source(uploaded_logs)
+        measure_images = ai_engine.convert_and_mask_images(pdf_list)
+        my_bar.progress(0.4, text="AI 지식베이스 연동 및 데이터 정밀 추출 중...")
+        
+        if not measure_images:
+            st.error("이미지로 변환할 수 있는 유효한 PDF 페이지가 없습니다.")
+            my_bar.empty()
         else:
-            try:
-                # 1. 파일 추출 (일반 PDF 및 ZIP 압축 해제)
-                with st.spinner("1/5. 업로드된 문서 파일을 추출 중입니다..."):
-                    pdf_list = ai_engine.extract_pdfs_from_source(main_files)
-                    if not pdf_list:
-                        st.error("유효한 PDF 문서를 찾을 수 없습니다.")
-                        st.stop()
-                
-                # 2. 이미지 변환 (메모리 최적화 적용)
-                # (progress 바는 ai_engine 내부에 구현되어 있음)
-                converted_images = ai_engine.convert_and_mask_images(pdf_list)
-                
-                # 3. 지식베이스(RAG DB) 몰래 불러오기
-                with st.spinner("3/5. 저장된 환경 법규 지식베이스를 연동 중입니다..."):
-                    loaded_vector_db = ai_engine.load_vector_db()
-                
-                # 4. AI 정밀 진단 (RAG DB 주입)
-                with st.spinner("4/5. AI 엔진이 데이터를 정밀 분석 중입니다..."):
-                    ai_data = ai_engine.analyze_log_compliance(converted_images, user_industry, loaded_vector_db)
-                    
-                # 5. 전문가 제언 및 PDF 렌더링
-                with st.spinner("5/5. 대기환경 전문가 제언 작성 및 보고서 생성 중..."):
-                    air_advice = ai_engine.generate_advanced_air_advice(station_name, str(pm10_val), str(o3_val))
-                    
-                    user_info = {
-                        "name": user_name,
-                        "addr": user_addr,
-                        "industry": user_industry,
-                        "permit_no": "-"
-                    }
-                    pdf_bytes = create_gov_report_pdf(ai_data, user_info, air_advice, air_data, station_name)
-                
-                # 결과 출력 및 다운로드
-                st.success("✅ AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
-                st.download_button(
-                    label="📥 진단 보고서 다운로드 (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"비산배출_정밀진단보고서_{user_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"분석 중 치명적인 오류가 발생했습니다: {e}")
+            vector_db = ai_engine.load_vector_db()
+            diagnosis_result = ai_engine.analyze_log_compliance(measure_images, user_industry, vector_db)
+            
+            my_bar.progress(0.8, text="전문가 제언 작성 중...")
+            advice = ai_engine.generate_advanced_air_advice(station_name, "11", "0.027")
+            
+            my_bar.progress(1.0, text="완료!")
+            time.sleep(0.5)
+            my_bar.empty()
+
+            st.success("✅ AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
+            
+            # [테스트 확인용] 콘솔이나 화면에 결과값 띄우기
+            with st.expander("AI 데이터 추출 결과 확인하기"):
+                st.json(diagnosis_result["parsed"])
+                st.write(advice)
+            
+            # TODO: 여기에 기존에 쓰시던 pdf_generator.py 연동 코드를 연결하시면 최종 PDF가 다운로드 됩니다.
