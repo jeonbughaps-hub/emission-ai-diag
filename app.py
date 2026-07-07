@@ -12,7 +12,7 @@ import pdf_generator
 st.set_page_config(page_title="HAPs-AI 진단 시스템", page_icon="🛡️", layout="wide")
 
 # =====================================================================
-# 2. 사이드바 UI (사용자 입력)
+# 2. 사이드바 UI (사용자 입력 & 동적 매핑)
 # =====================================================================
 st.sidebar.title("환경관리 정밀 진단")
 
@@ -20,21 +20,43 @@ st.sidebar.markdown("### 📋 기본 정보 입력")
 user_industry = st.sidebar.selectbox("업종 분류", ["III업종", "I업종", "II업종", "IV업종", "V업종"])
 company_name = st.sidebar.text_input("사업장명", value="제이")
 
-# 공공데이터 연동을 위한 소재지 분할 입력 (지역 제한 및 구 단위)
+# 공공데이터 연동을 위한 소재지 분할 입력
 col_region, col_district = st.sidebar.columns(2)
 with col_region:
     region = st.selectbox("지역", ["충청", "대전", "세종", "전라", "광주"], index=3)
 with col_district:
-    district = st.text_input("시/구 단위", value="완주")
-company_location = f"{region} {district}"
+    district = st.text_input("구 단위", value="완주")
 
-station_name = st.sidebar.text_input("관할 측정소", value="봉동읍")
+company_location = f"{region} {district}".strip()
+
+# 💡 지역별 관할 측정소 자동 매핑 사전 (필요시 마음껏 추가/수정 가능)
+station_mapping = {
+    "전라 완주": "봉동읍",
+    "전라 전주": "삼천동",
+    "충청 청주": "오창읍",
+    "충청 천안": "백석동",
+    "대전 대덕": "문평동",
+    "세종 세종": "아름동",
+    "광주 광산": "평동"
+}
+
+# 입력된 지역 정보에 맞춰 측정소를 자동으로 찾아줍니다. (사전에 없으면 기본값 유지)
+default_station = station_mapping.get(company_location, "봉동읍")
+station_name = st.sidebar.text_input("관할 측정소", value=default_station)
 
 # =====================================================================
-# 🟢 3. 지식베이스 생존 표시기 (상태창)
+# 🟢 3. 지식베이스 생존 표시기 (자동 복구 마법 포함)
 # =====================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
+
+# [마법의 복구 코드] 깃허브 최상단에 파일이 덩그러니 있으면 자동으로 폴더를 만들고 넣어줌
+if os.path.exists("index.faiss") and os.path.exists("index.pkl"):
+    if not os.path.exists(ai_engine.FAISS_DB_DIR):
+        os.makedirs(ai_engine.FAISS_DB_DIR)
+    shutil.move("index.faiss", os.path.join(ai_engine.FAISS_DB_DIR, "index.faiss"))
+    shutil.move("index.pkl", os.path.join(ai_engine.FAISS_DB_DIR, "index.pkl"))
+
 if os.path.exists(ai_engine.FAISS_DB_DIR):
     st.sidebar.success("🟢 정상 가동 중 (영구 구축됨)")
 else:
@@ -65,10 +87,9 @@ if admin_password == "1234":
         else:
             st.sidebar.warning("ZIP 파일을 먼저 올려주세요.")
             
-    # [새로운 기능] 서버에 구축된 DB를 내 PC로 다운로드하여 깃허브에 올릴 수 있도록 돕는 버튼
     if os.path.exists(ai_engine.FAISS_DB_DIR):
         st.sidebar.markdown("---")
-        st.sidebar.markdown("#### 💾 지식베이스 백업 (옵션 2 적용용)")
+        st.sidebar.markdown("#### 💾 지식베이스 백업")
         shutil.make_archive("faiss_vector_db", 'zip', ai_engine.FAISS_DB_DIR)
         with open("faiss_vector_db.zip", "rb") as f:
             st.sidebar.download_button(
@@ -138,7 +159,7 @@ if diagnose_btn:
                         parsed_data=diagnosis_result["parsed"],
                         ai_advice=advice,
                         company_name=company_name,
-                        location=company_location, # 복구된 소재지 변수를 전달!
+                        location=company_location, 
                         industry=user_industry,
                         station=station_name
                     )
