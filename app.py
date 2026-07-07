@@ -1,9 +1,10 @@
 import streamlit as st
 import os
 import time
+import shutil
 from datetime import datetime
 import ai_engine
-import pdf_generator  # PDF 생성 모듈 
+import pdf_generator 
 
 # =====================================================================
 # 1. 페이지 기본 설정
@@ -18,6 +19,15 @@ st.sidebar.title("환경관리 정밀 진단")
 st.sidebar.markdown("### 📋 기본 정보 입력")
 user_industry = st.sidebar.selectbox("업종 분류", ["III업종", "I업종", "II업종", "IV업종", "V업종"])
 company_name = st.sidebar.text_input("사업장명", value="제이")
+
+# 공공데이터 연동을 위한 소재지 분할 입력 (지역 제한 및 구 단위)
+col_region, col_district = st.sidebar.columns(2)
+with col_region:
+    region = st.selectbox("지역", ["충청", "대전", "세종", "전라", "광주"], index=3)
+with col_district:
+    district = st.text_input("시/구 단위", value="완주")
+company_location = f"{region} {district}"
+
 station_name = st.sidebar.text_input("관할 측정소", value="봉동읍")
 
 # =====================================================================
@@ -26,7 +36,7 @@ station_name = st.sidebar.text_input("관할 측정소", value="봉동읍")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
 if os.path.exists(ai_engine.FAISS_DB_DIR):
-    st.sidebar.success("🟢 정상 가동 중 (학습 완료)")
+    st.sidebar.success("🟢 정상 가동 중 (영구 구축됨)")
 else:
     st.sidebar.error("🔴 지식베이스 없음 (관리자 업로드 필요)")
 
@@ -35,27 +45,38 @@ else:
 # =====================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔒 관리자 모드")
-# 비밀번호 입력창 (글자가 *** 로 가려집니다)
 admin_password = st.sidebar.text_input("관리자 암호를 입력하세요", type="password")
 
-# 비밀번호가 1234 일 때만 아래 메뉴가 펼쳐집니다.
 if admin_password == "1234":
     st.sidebar.markdown("#### ⚙️ 시스템 관리자 메뉴")
-    st.sidebar.caption("※ 환경부 매뉴얼, 법령 등 텍스트가 포함된 PDF들을 ZIP으로 묶어서 올려주세요.")
+    st.sidebar.caption("※ 환경부 매뉴얼 등 PDF를 ZIP으로 묶어서 올려주세요.")
     
     uploaded_kb = st.sidebar.file_uploader("지식베이스용 ZIP 업로드", type=["zip"], key="kb_uploader")
-    if st.sidebar.button("지식베이스 영구 구축 (업데이트)"):
+    if st.sidebar.button("지식베이스 구축 (업데이트)"):
         if uploaded_kb:
             with st.spinner("문서를 분석하고 AI 지식을 구축하는 중입니다..."):
                 success = ai_engine.build_vector_db(uploaded_kb)
                 if success:
                     st.sidebar.success("✅ 성공적으로 학습되었습니다!")
                     time.sleep(1)
-                    st.rerun() # 화면을 새로고침하여 생존 표시기를 🟢 초록불로 바꿉니다.
+                    st.rerun() 
                 else:
-                    st.sidebar.error("❌ 학습에 실패했습니다. 파일을 확인해주세요.")
+                    st.sidebar.error("❌ 학습에 실패했습니다.")
         else:
             st.sidebar.warning("ZIP 파일을 먼저 올려주세요.")
+            
+    # [새로운 기능] 서버에 구축된 DB를 내 PC로 다운로드하여 깃허브에 올릴 수 있도록 돕는 버튼
+    if os.path.exists(ai_engine.FAISS_DB_DIR):
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### 💾 지식베이스 백업 (옵션 2 적용용)")
+        shutil.make_archive("faiss_vector_db", 'zip', ai_engine.FAISS_DB_DIR)
+        with open("faiss_vector_db.zip", "rb") as f:
+            st.sidebar.download_button(
+                label="📥 완성된 DB 다운로드 (ZIP)",
+                data=f,
+                file_name="faiss_vector_db.zip",
+                mime="application/zip"
+            )
 
 # =====================================================================
 # 🖥️ 5. 메인 화면 UI
@@ -84,7 +105,6 @@ if diagnose_btn:
     if not uploaded_logs:
         st.warning("⚠️ 진단할 운영기록부(PDF/ZIP)를 먼저 업로드해주세요.")
     else:
-        # 진행 상태 표시 바
         progress_text = "PDF 문서 정밀 스캔 중..."
         my_bar = st.progress(0.1, text=progress_text)
         
@@ -108,20 +128,17 @@ if diagnose_btn:
 
             st.success("✅ AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
             
-            # [테스트 확인용] 콘솔이나 화면에 결과값 띄우기 (불필요시 주석 처리 가능)
             with st.expander("AI 데이터 추출 결과 확인하기"):
                 st.json(diagnosis_result["parsed"])
                 st.write(advice)
             
-            # ==========================================
-            # 📄 PDF 보고서 생성 및 다운로드 버튼 처리
-            # ==========================================
             with st.spinner("최종 PDF 보고서를 디자인하고 있습니다..."):
                 try:
                     pdf_file_path = pdf_generator.generate_report(
                         parsed_data=diagnosis_result["parsed"],
                         ai_advice=advice,
                         company_name=company_name,
+                        location=company_location, # 복구된 소재지 변수를 전달!
                         industry=user_industry,
                         station=station_name
                     )
