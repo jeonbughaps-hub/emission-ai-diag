@@ -1,0 +1,17 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # 매일 한국 시간 오전 9시(UTC 0시)에 자동으로 앱을 방문합니다.
+    - cron: "0 0 * * *"
+  workflow_dispatch: # 필요할 때 깃허브에서 수동으로 실행할 수 있는 버튼
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          # 🚨 주의: 아래 주소를 실제 개발자님의 앱 주소로 반드시 변경하세요!
+          curl -s https://haps-ai-diag.streamlit.app > /dev/null
+          echo "Streamlit 앱 자동 접속 완료! (휴면 방지 성공)"
