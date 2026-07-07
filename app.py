@@ -1,12 +1,18 @@
 import streamlit as st
 import os
 import time
+from datetime import datetime
 import ai_engine
+import pdf_generator  # PDF 생성 모듈 
 
+# =====================================================================
 # 1. 페이지 기본 설정
+# =====================================================================
 st.set_page_config(page_title="HAPs-AI 진단 시스템", page_icon="🛡️", layout="wide")
 
+# =====================================================================
 # 2. 사이드바 UI (사용자 입력)
+# =====================================================================
 st.sidebar.title("환경관리 정밀 진단")
 
 st.sidebar.markdown("### 📋 기본 정보 입력")
@@ -19,7 +25,6 @@ station_name = st.sidebar.text_input("관할 측정소", value="봉동읍")
 # =====================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
-# ai_engine에서 지정한 FAISS DB 폴더가 살아있는지 검사합니다.
 if os.path.exists(ai_engine.FAISS_DB_DIR):
     st.sidebar.success("🟢 정상 가동 중 (학습 완료)")
 else:
@@ -33,7 +38,7 @@ st.sidebar.markdown("### 🔒 관리자 모드")
 # 비밀번호 입력창 (글자가 *** 로 가려집니다)
 admin_password = st.sidebar.text_input("관리자 암호를 입력하세요", type="password")
 
-# 비밀번호가 일치할 때만 아래 메뉴가 펼쳐집니다.
+# 비밀번호가 1234 일 때만 아래 메뉴가 펼쳐집니다.
 if admin_password == "1234":
     st.sidebar.markdown("#### ⚙️ 시스템 관리자 메뉴")
     st.sidebar.caption("※ 환경부 매뉴얼, 법령 등 텍스트가 포함된 PDF들을 ZIP으로 묶어서 올려주세요.")
@@ -73,7 +78,7 @@ with col2:
     st.metric(label="미세먼지 (PM10)", value="11 µg/m³", delta="기준: 80", delta_color="normal")
 
 # =====================================================================
-# 🚀 6. 진단 실행 로직 연동
+# 🚀 6. 진단 실행 로직 연동 및 PDF 다운로드
 # =====================================================================
 if diagnose_btn:
     if not uploaded_logs:
@@ -103,9 +108,32 @@ if diagnose_btn:
 
             st.success("✅ AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
             
-            # [테스트 확인용] 콘솔이나 화면에 결과값 띄우기
+            # [테스트 확인용] 콘솔이나 화면에 결과값 띄우기 (불필요시 주석 처리 가능)
             with st.expander("AI 데이터 추출 결과 확인하기"):
                 st.json(diagnosis_result["parsed"])
                 st.write(advice)
             
-            # TODO: 여기에 기존에 쓰시던 pdf_generator.py 연동 코드를 연결하시면 최종 PDF가 다운로드 됩니다.
+            # ==========================================
+            # 📄 PDF 보고서 생성 및 다운로드 버튼 처리
+            # ==========================================
+            with st.spinner("최종 PDF 보고서를 디자인하고 있습니다..."):
+                try:
+                    pdf_file_path = pdf_generator.generate_report(
+                        parsed_data=diagnosis_result["parsed"],
+                        ai_advice=advice,
+                        company_name=company_name,
+                        industry=user_industry,
+                        station=station_name
+                    )
+                    
+                    with open(pdf_file_path, "rb") as pdf_file:
+                        pdf_bytes = pdf_file.read()
+                        
+                    st.download_button(
+                        label="📥 진단 보고서 다운로드 (PDF)",
+                        data=pdf_bytes,
+                        file_name=f"비산배출_정밀진단보고서_{company_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.error(f"PDF 생성 중 오류가 발생했습니다: {e}")
