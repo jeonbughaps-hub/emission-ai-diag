@@ -1,6 +1,7 @@
 import os
 import fitz
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 import io
 import json
@@ -130,8 +131,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         st.error("API 키를 찾을 수 없습니다. Secrets 설정을 확인하세요.")
         return {"parsed": {}, "raw": "API 키 오류"}
             
-    # 🚨 수정 완료: 구형 SDK(google.generativeai) 문법으로 100% 통일
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
@@ -175,11 +175,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 🚨 수정 완료: 구형 SDK 문법 적용 및 안정적인 1.5-flash 모델 호출
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(
-            [prompt] + measure_images,
-            generation_config={"temperature": 0.0}
+        # 가장 안정적인 범용 최신 모델 호출
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[prompt] + measure_images,
+            config=types.GenerateContentConfig(temperature=0.0)
         )
         
         raw_text = response.text.strip()
@@ -208,9 +208,7 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류."
             
-    # 🚨 수정 완료: 구형 SDK(google.generativeai) 문법으로 100% 통일
-    genai.configure(api_key=api_key)
-    
+    client = genai.Client(api_key=api_key)
     prompt = f"""
 당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
 관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
@@ -222,8 +220,11 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt, generation_config={"temperature": 0.4})
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[prompt],
+            config=types.GenerateContentConfig(temperature=0.4)
+        )
         return response.text.strip()
     except Exception as e:
         st.error(f"2단계 전문가 제언 중 API 오류 발생: {e}")
