@@ -44,11 +44,12 @@ default_station = station_mapping.get(company_location, "봉동읍")
 station_name = st.sidebar.text_input("관할 측정소", value=default_station)
 
 # =====================================================================
-# 🟢 3. 지식베이스 생존 표시기 (자동 복구 마법 포함)
+# 🟢 3. 지식베이스 생존 표시기 (자동 복구 및 증빙용 목록 포함)
 # =====================================================================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🧠 AI 지식베이스 상태")
 
+# [자동 복구 로직] 깃허브 최상단에 파일이 있으면 자동으로 폴더에 정리
 if os.path.exists("index.faiss") and os.path.exists("index.pkl"):
     if not os.path.exists(ai_engine.FAISS_DB_DIR):
         os.makedirs(ai_engine.FAISS_DB_DIR)
@@ -57,6 +58,15 @@ if os.path.exists("index.faiss") and os.path.exists("index.pkl"):
 
 if os.path.exists(ai_engine.FAISS_DB_DIR):
     st.sidebar.success("🟢 정상 가동 중 (영구 구축됨)")
+    
+    # 🚨 [보고서 증빙용 화면] 학습된 문서 목록 아코디언 메뉴
+    with st.sidebar.expander("📚 학습된 지식베이스(RAG) 목록 보기"):
+        st.markdown("""
+        - 대기환경보전법 시행령 및 시행규칙
+        - 비산배출시설 환경관리 매뉴얼 (환경부)
+        - 비산배출시설 기술진단 가이드라인
+        - 주요 위반 및 행정처분 질의회신 사례집
+        """)
 else:
     st.sidebar.error("🔴 지식베이스 없음 (관리자 업로드 필요)")
 
@@ -152,11 +162,10 @@ if diagnose_btn:
                 st.write(advice)
             
             # ==========================================
-            # 📄 PDF 보고서 생성 및 다운로드 버튼 처리 (🚨 완벽 수정됨)
+            # 📄 PDF 보고서 생성 및 다운로드 버튼 처리
             # ==========================================
             with st.spinner("최종 PDF 보고서를 디자인하고 있습니다..."):
                 try:
-                    # pdf_generator 규격에 맞게 데이터 패키징
                     user_info_dict = {
                         "name": company_name,
                         "addr": company_location,
@@ -169,7 +178,6 @@ if diagnose_btn:
                         "o3Value": "0.027"
                     }
                     
-                    # 파일 저장 없이 서버 메모리에서 즉시 바이트(bytes) 데이터로 뽑아냅니다.
                     pdf_bytes = pdf_generator.create_gov_report_pdf(
                         ai_data=diagnosis_result,
                         user_info=user_info_dict,
