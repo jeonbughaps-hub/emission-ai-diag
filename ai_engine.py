@@ -188,8 +188,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
+        # 💡 안정적인 동작과 빠른 속도를 위해 flash 모델 원복 유지
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(temperature=0.0)
         )
@@ -232,8 +233,9 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
+        # 💡 안정적인 동작과 빠른 속도를 위해 flash 모델 원복 유지
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.5-flash',
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.4)
         )
