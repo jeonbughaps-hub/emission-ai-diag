@@ -160,7 +160,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 3. LDAR 누출 점검 (ldar): 각 연도별로 실제 측정값(농도)이 기재된 행(Row)의 개수를 합산하여 target_count에 기입하세요.
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 🚨]
-문서 내에 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'와 관련된 연 1회 점검 기록이 있는지 반드시 확인하세요.
+문서 내에 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'와 관련된 연 1회 점검 기록이 있는지 반드시 확인하고, 발견되면 반드시 `cooling` 객체의 `data` 배열에 담으세요. 없으면 빈 배열 `[]` 로 두십시오.
 - 냉각탑: 냉각수 TOC 분석 실시 여부 및 TOC 농도 50ppm 미만 유지 여부 (초과 시 부적합)
 - 열교환기: 전·후단 냉각수 농도 편차 분석 실시 여부 및 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합)
 📌 [특수 계산 조건]: 만약 열교환기 항목에 측정 수치가 하나만 기재되어 있다면, 이는 '후단' 수치로 간주합니다. 이 경우 문서 내에 있는 '냉각탑의 TOC 분석 결과값'을 찾아 열교환기의 '전단' 수치로 대입하여 두 수치의 편차를 직접 계산하세요.
@@ -168,7 +168,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
 [🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
 서술형 의견(overall_opinion 등)을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요.
-문서에 없는 과거 이력(예: 2023년 측정 편차 초과, 화재 발생 이력 등)이나 가상의 시나리오를 절대로 지어내지 마십시오. 추출된 정보가 부족하면 상상하지 말고 있는 사실만 건조하고 간결하게 요약하세요.
+문서에 없는 과거 이력(예: 문서에 없는 2023년 측정 기록, 화재 발생 이력 등)이나 가상의 시나리오를 절대로 지어내지 마십시오. 추출된 정보가 부족하면 상상하지 말고 "자료가 확인되지 않음"이라고 있는 사실만 건조하고 간결하게 요약하세요.
 
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
@@ -179,10 +179,10 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
-  "parsed_items": [ 
-    {{"facility": "냉각탑", "status": "적합", "risk": "낮음", "recommendation": "TOC 2.6ppm (기준 50ppm 미만 만족)"}},
-    {{"facility": "열교환기(CK-1)", "status": "적합", "risk": "낮음", "recommendation": "편차 0.1ppm (냉각탑 2.6ppm 대입 산정, 기준 1ppm 미만 만족)"}}
-  ],
+  "cooling": {{ "data": [
+    {{"facility": "냉각탑", "result": "적합", "risk": "낮음", "recommendation": "TOC 2.6ppm (기준 50ppm 미만 만족)"}},
+    {{"facility": "열교환기(CK-1)", "result": "적합", "risk": "낮음", "recommendation": "편차 0.1ppm (냉각탑 2.6ppm 대입 산정, 기준 1ppm 미만 만족)"}}
+  ]}},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
   "priority_actions": [ {{"priority": "1", "action": "냉각탑 TOC 정기검사", "deadline": "1개월 이내", "owner": "환경안전팀"}} ],
