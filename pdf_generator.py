@@ -619,16 +619,16 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [22, 26, 60, 26, 26, 30])
 
-    # 💡 냉각탑 & 열교환기 전용 표 동적 생성 로직
+    # 💡 측정일 컬럼이 추가된 냉각탑 & 열교환기 전용 표 동적 생성
     cooling_rows = [
-        [_record_value(p, "facility"), _record_value(p, "result"), _record_value(p, "risk"), _record_value(p, "recommendation")]
+        [_record_value(p, "date"), _record_value(p, "facility"), _record_value(p, "result"), _record_value(p, "recommendation")]
         for p in _get_rows(data, "cooling")
     ]
     
     next_idx = 2
     if cooling_rows:
-        pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 분석")
-        pdf.draw_zebra_table(["시설명", "판정 결과", "위험도", "측정 결과 및 검토 내용"], cooling_rows, [45, 25, 20, 100])
+        pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
+        pdf.draw_zebra_table(["측정일", "시설명", "판정", "측정 결과 및 검토 내용"], cooling_rows, [30, 45, 20, 95])
         next_idx += 1
 
     pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
@@ -641,6 +641,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ["점검 연도", "대상 개소", "누출 수", "누출률", "재측정·조치", "최종 판정"],
         ldar_rows, [25, 30, 25, 25, 45, 40]
     )
+    next_idx += 1
 
     # 마. 위험도
     pdf.draw_section_header("마. 위험도 평가 및 행정처분 참고")
