@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # =====================================================================
-# 2. 디자인 시스템 (커스텀 CSS - 가독성 및 버튼 충돌 보정 완료)
+# 2. 디자인 시스템 (커스텀 CSS - 사이드바 캡션 가독성 보정 완료)
 # =====================================================================
 st.markdown("""
 <style>
@@ -54,8 +54,9 @@ html, body, [class*="css"] {
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
 [data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stCaption {
-    color: #EAF2F8 !important;
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+    color: #D8E7F2 !important;
 }
 [data-testid="stSidebar"] [data-baseweb="select"] > div,
 [data-testid="stSidebar"] input,
@@ -209,8 +210,97 @@ hr { border-color: var(--line); }
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# 3. 사이드바 UI (사업장 입력 & 동적 측정소 매핑 & 지식베이스 상태)
+# 3. 사이드바 UI (사업장 입력 & 지능형 측정소 자동 매핑)
 # =====================================================================
+def get_mapped_station(region_val: str, district_val: str) -> str:
+    """지역 및 시/군/구 입력값을 분석하여 관할 대기측정소를 자동 반환합니다."""
+    # 시/군/구별 대표 측정소 매핑 사전 (충청·전라·대전·세종·광주 권역)
+    district_station_map = {
+        # 충남/충북 권역
+        "논산": "성동면",   # 논산 일반산단/성동면 측정소 (시내권은 취암동)
+        "청주": "오창읍",
+        "천안": "백석동",
+        "아산": "배방읍",
+        "서산": "대산읍",
+        "당진": "송산면",
+        "공주": "봉황동",
+        "보령": "대천동",
+        "계룡": "엄사면",
+        "금산": "금산읍",
+        "부여": "부여읍",
+        "서천": "장항읍",
+        "청양": "청양읍",
+        "홍성": "홍성읍",
+        "예산": "예산읍",
+        "태안": "태안읍",
+        "충주": "칠금동",
+        "제천": "장락동",
+        "보은": "보은읍",
+        "옥천": "옥천읍",
+        "영동": "영동읍",
+        "증평": "증평읍",
+        "진천": "진천읍",
+        "괴산": "괴산읍",
+        "음성": "금왕읍",
+        "단양": "단양읍",
+        # 전북/전남 권역
+        "완주": "봉동읍",
+        "전주": "삼천동",
+        "군산": "소룡동",
+        "익산": "팔봉동",
+        "정읍": "연지동",
+        "남원": "죽항동",
+        "김제": "요촌동",
+        "진안": "진안읍",
+        "무주": "무주읍",
+        "장수": "장수읍",
+        "임실": "임실읍",
+        "순창": "순창읍",
+        "고창": "고창읍",
+        "부안": "부안읍",
+        "여수": "삼일동",
+        "순천": "장천동",
+        "광양": "태인동",
+        "목포": "부흥동",
+        "나주": "빛가람동",
+        "영암": "삼호읍",
+        "무안": "무안읍",
+        "해남": "해남읍",
+        "영광": "영광읍",
+        "화순": "화순읍",
+        "장성": "장성읍",
+        "담양": "담양읍",
+        # 대전/세종/광주 권역
+        "대덕": "문평동",
+        "유성": "구성동",
+        "둔산": "둔산동",
+        "문평": "문평동",
+        "세종": "아름동",
+        "조치원": "조치원읍",
+        "광산": "평동",
+        "평동": "평동",
+        "하남": "오선동",
+    }
+
+    combined = f"{region_val} {district_val}".strip()
+    # 1. 입력된 텍스트에 매핑 키워드가 포함되어 있는지 우선 검사 (예: '충남 논산', '논산시' 모두 '논산'으로 매칭)
+    for key, station in district_station_map.items():
+        if key in district_val or key in combined:
+            return station
+
+    # 2. 광역 단위 기본값
+    region_fallback = {
+        "충청": "오창읍",
+        "대전": "문평동",
+        "세종": "아름동",
+        "전라": "봉동읍",
+        "광주": "평동"
+    }
+    if district_val.strip():
+        return f"{district_val.strip()}"
+    return region_fallback.get(region_val, "봉동읍")
+
+
 with st.sidebar:
     st.markdown("""
     <div style="padding:10px 2px 14px;">
@@ -233,18 +323,13 @@ with st.sidebar:
 
     company_location = f"{region} {district}".strip()
 
-    # 💡 지역별 관할 측정소 자동 매핑 사전 (기존 로직 유지)
-    station_mapping = {
-        "전라 완주": "봉동읍",
-        "전라 전주": "삼천동",
-        "충청 청주": "오창읍",
-        "충청 천안": "백석동",
-        "대전 대덕": "문평동",
-        "세종 세종": "아름동",
-        "광주 광산": "평동"
-    }
-    default_station = station_mapping.get(company_location, "봉동읍")
-    station_name = st.text_input("관할 측정소", value=default_station)
+    # 💡 지역/구 단위 변경 시 즉시 연동되도록 동적 key 부여
+    default_station = get_mapped_station(region, district)
+    station_name = st.text_input(
+        "관할 측정소",
+        value=default_station,
+        key=f"station_input_{company_location}"
+    )
     st.caption("소재지 기준으로 관할 대기측정소를 자동 매핑합니다.")
 
     # =================================================================
