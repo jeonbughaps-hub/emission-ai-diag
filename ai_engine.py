@@ -162,8 +162,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 🚨]
 문서 내에 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'와 관련된 연 1회 점검 기록이 있는지 반드시 확인하세요.
 - 냉각탑: 냉각수 TOC 분석 실시 여부 및 TOC 농도 50ppm 미만 유지 여부 (초과 시 부적합)
-- 열교환기: 전·후단 냉각수 농도 편차 분석 실시 여부 및 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합, 미기재 시 판단불가)
-해당 내용이 발견되면 반드시 `parsed_items` 배열에 객체 형태로 추가하세요.
+- 열교환기: 전·후단 냉각수 농도 편차 분석 실시 여부 및 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합)
+📌 [특수 계산 조건]: 만약 열교환기 항목에 측정 수치가 하나만 기재되어 있다면, 이는 '후단' 수치로 간주합니다. 이 경우 문서 내에 있는 '냉각탑의 TOC 분석 결과값'을 찾아 열교환기의 '전단' 수치로 대입하여 두 수치의 편차를 직접 계산하세요.
+  * 예시: 냉각탑 TOC가 2.6ppm이고 열교환기 CK-1이 2.7ppm으로 하나만 적혀 있다면, 편차는 2.7 - 2.6 = 0.1ppm 이며 1ppm 미만이므로 '적합'으로 판정합니다.
 
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
@@ -175,8 +176,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "parsed_items": [ 
-    {{"facility": "냉각탑(CT-1)", "status": "적합", "risk": "낮음", "recommendation": "TOC 45ppm (기준 50ppm 미만 만족)"}},
-    {{"facility": "열교환기(HE-2)", "status": "판단불가", "risk": "높음", "recommendation": "전/후단 농도 편차 미기재, 연 1회 점검 요망"}}
+    {{"facility": "냉각탑", "status": "적합", "risk": "낮음", "recommendation": "TOC 2.6ppm (기준 50ppm 미만 만족)"}},
+    {{"facility": "열교환기(CK-1)", "status": "적합", "risk": "낮음", "recommendation": "편차 0.1ppm (냉각탑 2.6ppm 대입 산정, 기준 1ppm 미만 만족)"}}
   ],
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
@@ -187,7 +188,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 💡 정밀 추출을 위해 최신 고성능 PRO 모델 적용
         response = client.models.generate_content(
             model='gemini-1.5-pro',
             contents=[prompt] + measure_images,
@@ -232,7 +232,6 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        # 💡 전문적인 장문 작성을 위해 PRO 모델 적용
         response = client.models.generate_content(
             model='gemini-1.5-pro',
             contents=[prompt],
