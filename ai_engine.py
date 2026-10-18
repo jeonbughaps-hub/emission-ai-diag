@@ -166,6 +166,10 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 📌 [특수 계산 조건]: 만약 열교환기 항목에 측정 수치가 하나만 기재되어 있다면, 이는 '후단' 수치로 간주합니다. 이 경우 문서 내에 있는 '냉각탑의 TOC 분석 결과값'을 찾아 열교환기의 '전단' 수치로 대입하여 두 수치의 편차를 직접 계산하세요.
   * 예시: 냉각탑 TOC가 2.6ppm이고 열교환기 CK-1이 2.7ppm으로 하나만 적혀 있다면, 편차는 2.7 - 2.6 = 0.1ppm 이며 1ppm 미만이므로 '적합'으로 판정합니다.
 
+[🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
+서술형 의견(overall_opinion 등)을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요.
+문서에 없는 과거 이력(예: 2023년 측정 편차 초과, 화재 발생 이력 등)이나 가상의 시나리오를 절대로 지어내지 마십시오. 추출된 정보가 부족하면 상상하지 말고 있는 사실만 건조하고 간결하게 요약하세요.
+
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
 
@@ -184,11 +188,10 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "priority_actions": [ {{"priority": "1", "action": "냉각탑 TOC 정기검사", "deadline": "1개월 이내", "owner": "환경안전팀"}} ],
   "law_references": [ {{"law_name": "비산배출시설 관리기준", "article": "관련 조문", "summary": "냉각수 TOC 50ppm 미만 유지 의무", "checked_date": "2026-10-18"}} ],
   "followup_actions": [ {{"action": "열교환기 편차 점검", "owner": "관리자", "deadline": "분기 내", "status": "대기"}} ],
-  "overall_opinion": "지식베이스를 바탕으로 800자 내외의 전문적인 종합 의견을 작성."
+  "overall_opinion": "반드시 추출된 실제 데이터만을 기반으로 작성. 절대 가상의 과거 이력을 지어내지 말 것."
 }}
 """
     try:
-        # 💡 안정적인 동작과 빠른 속도를 위해 flash 모델 원복 유지
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
@@ -233,7 +236,6 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        # 💡 안정적인 동작과 빠른 속도를 위해 flash 모델 원복 유지
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt],
