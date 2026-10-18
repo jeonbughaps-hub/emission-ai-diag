@@ -144,8 +144,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
     retrieved_knowledge = ""
     if vector_db is not None:
         try:
-            search_query = f"비산배출시설 {user_industry} 방지시설 관리기준 및 행정처분"
-            docs = vector_db.similarity_search(search_query, k=3)
+            search_query = f"비산배출시설 {user_industry} 방지시설 냉각탑 열교환기 관리기준 및 행정처분"
+            docs = vector_db.similarity_search(search_query, k=4)
             retrieved_knowledge = "\n".join([doc.page_content for doc in docs])
         except:
             retrieved_knowledge = ""
@@ -158,7 +158,12 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 2. 방지시설 농도 (prevention): '측정일시', '시설명', '측정결과 후단' 칼럼의 값을 추출하세요. 
    - 🚨주의: THC 측정기기 정도검사의 기준에서 '결과' 부분은 철저히 무시하고 추출 대상에서 제외하세요.
 3. LDAR 누출 점검 (ldar): 각 연도별로 실제 측정값(농도)이 기재된 행(Row)의 개수를 합산하여 target_count에 기입하세요.
-4. 열교환기 판정: 열교환기의 편차가 미확인(공란 등)된 경우 판정은 무조건 '판단불가'로 기재하세요.
+
+[🚨 냉각탑 및 열교환기 정밀 분석 필수 🚨]
+문서 내에 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'와 관련된 연 1회 점검 기록이 있는지 반드시 확인하세요.
+- 냉각탑: 냉각수 TOC 분석 실시 여부 및 TOC 농도 50ppm 미만 유지 여부 (초과 시 부적합)
+- 열교환기: 전·후단 냉각수 농도 편차 분석 실시 여부 및 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합, 미기재 시 판단불가)
+해당 내용이 발견되면 반드시 `parsed_items` 배열에 객체 형태로 추가하세요.
 
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
@@ -169,15 +174,22 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
+  "parsed_items": [ 
+    {{"facility": "냉각탑(CT-1)", "status": "적합", "risk": "낮음", "recommendation": "TOC 45ppm (기준 50ppm 미만 만족)"}},
+    {{"facility": "열교환기(HE-2)", "status": "판단불가", "risk": "높음", "recommendation": "전/후단 농도 편차 미기재, 연 1회 점검 요망"}}
+  ],
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
+  "priority_actions": [ {{"priority": "1", "action": "냉각탑 TOC 정기검사", "deadline": "1개월 이내", "owner": "환경안전팀"}} ],
+  "law_references": [ {{"law_name": "비산배출시설 관리기준", "article": "관련 조문", "summary": "냉각수 TOC 50ppm 미만 유지 의무", "checked_date": "2026-10-18"}} ],
+  "followup_actions": [ {{"action": "열교환기 편차 점검", "owner": "관리자", "deadline": "분기 내", "status": "대기"}} ],
   "overall_opinion": "지식베이스를 바탕으로 800자 내외의 전문적인 종합 의견을 작성."
 }}
 """
     try:
-        # 🚨 [팩트 기반 수정] 2026년 현재 구글이 지원하는 최신 활성 모델 명칭 적용
+        # 💡 정밀 추출을 위해 최신 고성능 PRO 모델 적용
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-pro',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(temperature=0.0)
         )
@@ -220,9 +232,9 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 【3. 방지시설 및 LDAR 연계 집중 관리 방안】
 """
     try:
-        # 🚨 [팩트 기반 수정] 2026년 현재 구글이 지원하는 최신 활성 모델 명칭 적용
+        # 💡 전문적인 장문 작성을 위해 PRO 모델 적용
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-pro',
             contents=[prompt],
             config=types.GenerateContentConfig(temperature=0.4)
         )
