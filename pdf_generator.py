@@ -30,7 +30,6 @@ COLOR_GRAY = (135, 145, 157)
 
 
 def ensure_korean_font():
-    """한글 폰트가 없으면 다운로드를 시도합니다."""
     try:
         if not os.path.exists(FONT_FILE_NAME):
             urllib.request.urlretrieve(FONT_REGULAR_URL, FONT_FILE_NAME)
@@ -55,25 +54,18 @@ def _as_float(value):
 
 
 def get_aqi_status(val, item_type):
-    """지역 대기질 시각화용 분류이며 사업장 법규 준수 판정 기준은 아닙니다."""
     v = _as_float(val)
     if v is None:
         return "자료 없음", COLOR_GRAY, 0.0
     if item_type == "PM10":
-        if v <= 30:
-            return "좋음", (50, 150, 255), min(max(v / 150, 0), 1)
-        if v <= 80:
-            return "보통", (60, 180, 110), min(max(v / 150, 0), 1)
-        if v <= 150:
-            return "나쁨", COLOR_AMBER, min(max(v / 150, 0), 1)
+        if v <= 30: return "좋음", (50, 150, 255), min(max(v / 150, 0), 1)
+        if v <= 80: return "보통", (60, 180, 110), min(max(v / 150, 0), 1)
+        if v <= 150: return "나쁨", COLOR_AMBER, min(max(v / 150, 0), 1)
         return "매우 나쁨", COLOR_RED, 1.0
     if item_type == "O3":
-        if v <= 0.030:
-            return "좋음", (50, 150, 255), min(max(v / 0.150, 0), 1)
-        if v <= 0.090:
-            return "보통", (60, 180, 110), min(max(v / 0.150, 0), 1)
-        if v <= 0.150:
-            return "나쁨", COLOR_AMBER, min(max(v / 0.150, 0), 1)
+        if v <= 0.030: return "좋음", (50, 150, 255), min(max(v / 0.150, 0), 1)
+        if v <= 0.090: return "보통", (60, 180, 110), min(max(v / 0.150, 0), 1)
+        if v <= 0.150: return "나쁨", COLOR_AMBER, min(max(v / 0.150, 0), 1)
         return "매우 나쁨", COLOR_RED, 1.0
     return "측정불가", COLOR_GRAY, 0.0
 
@@ -81,28 +73,19 @@ def get_aqi_status(val, item_type):
 def _grade_color(grade, score=None):
     g = _safe_text(grade, "").upper()
     n = _as_float(score)
-    if g in ("A", "우수", "적합"):
-        return COLOR_GREEN
-    if g in ("B", "양호"):
-        return COLOR_BLUE
-    if g in ("C", "보통", "주의"):
-        return COLOR_AMBER
-    if g in ("D", "E", "미흡", "부적합", "위험"):
-        return COLOR_RED
+    if g in ("A", "우수", "적합"): return COLOR_GREEN
+    if g in ("B", "양호"): return COLOR_BLUE
+    if g in ("C", "보통", "주의"): return COLOR_AMBER
+    if g in ("D", "E", "미흡", "부적합", "위험"): return COLOR_RED
     if n is not None:
-        if n >= 90:
-            return COLOR_GREEN
-        if n >= 80:
-            return COLOR_BLUE
-        if n >= 60:
-            return COLOR_AMBER
+        if n >= 90: return COLOR_GREEN
+        if n >= 80: return COLOR_BLUE
+        if n >= 60: return COLOR_AMBER
         return COLOR_RED
     return COLOR_GRAY
 
 
 class ProfessionalPDF(FPDF):
-    """공공기관 보고서용 PDF 레이아웃."""
-
     def __init__(self, toc_data=None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self._toc = toc_data or []
@@ -634,7 +617,36 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [22, 25, 62, 25, 25, 26])
 
-    pdf.draw_sub_header("2) 비산누출시설 LDAR 점검 실적")
+    # 💡 동적 데이터 분리 (냉각탑/열교환기 vs 기타 항목)
+    parsed_items = data.get("parsed_items", [])
+    cooling_rows = []
+    other_items = []
+    
+    if isinstance(parsed_items, list):
+        for item in parsed_items:
+            if isinstance(item, dict):
+                fac = _record_value(item, "facility", _record_value(item, "item"))
+                row = [
+                    fac,
+                    _record_value(item, "status", _record_value(item, "result")),
+                    _record_value(item, "risk"),
+                    _record_value(item, "recommendation", _record_value(item, "action")),
+                ]
+                fac_upper = fac.upper()
+                if "냉각" in fac or "열교환" in fac or "TOC" in str(row).upper() or "CT" in fac_upper or "CK" in fac_upper or "HE" in fac_upper:
+                    cooling_rows.append(row)
+                else:
+                    other_items.append(row)
+
+    next_idx = 2
+    
+    # 💡 냉각탑/열교환기 데이터가 있으면 목차 생성, 없으면 자동 패스
+    if cooling_rows:
+        pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
+        pdf.draw_zebra_table(["시설명", "판정 결과", "위험도", "측정 결과 및 검토 내용"], cooling_rows, [45, 25, 20, 95])
+        next_idx += 1
+
+    pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
     ldar_rows = [
         [_record_value(p, "year"), _record_value(p, "target_count"), _record_value(p, "leak_count"),
          _record_value(p, "leak_rate"), _record_value(p, "recheck_done"), _record_value(p, "result")]
@@ -644,6 +656,13 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ["점검 연도", "대상 개소", "누출 수", "누출률", "재측정·조치", "최종 판정"],
         ldar_rows, [25, 30, 25, 25, 45, 35]
     )
+    next_idx += 1
+
+    pdf.draw_sub_header(f"{next_idx}) 기타 시설별 진단 결과 및 추가 확인사항")
+    if other_items:
+        pdf.draw_zebra_table(["시설·항목", "확인 결과", "위험도", "권고 조치"], other_items, [42, 38, 25, 80])
+    else:
+        pdf.draw_text_box("별도 추가 시설별 항목 데이터가 추출되지 않았습니다.")
 
     # 마. 위험도
     pdf.draw_section_header("마. 위험도 평가 및 행정처분 참고")
@@ -682,7 +701,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_sub_header("2) AI 정밀 진단 종합 의견")
     pdf.draw_text_box(data.get("overall_opinion", "-"))
 
-    # 사. 법령 (동적 데이터를 지우고 고정 안내 표로 복원)
+    # 사. 법령
     pdf.draw_section_header("사. 관련 규제 및 법령 참고사항")
     pdf.draw_sub_header("1) 벌칙 및 과태료 규정")
     law1 = [
@@ -702,7 +721,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     pdf.draw_zebra_table(["위반 사항", "1차 처분", "2차 처분", "3차 처분", "4차 처분"], law2, [45, 35, 35, 35, 35])
 
-    # 아. 변경신고 및 후속 조치 (동적 데이터를 지우고 고정 안내 문구로 복원)
+    # 아. 변경신고 및 후속 조치
     pdf.draw_section_header("아. 변경신고 및 추진체계")
     pdf.draw_sub_header("1) 비산배출시설 의무 변경신고 사유")
     pdf.draw_text_box(
@@ -714,7 +733,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         "5. 비산배출시설을 완전히 폐쇄하는 경우"
     )
 
-    # 자. 체크리스트 (고정형 빈 점검표 복원)
+    # 자. 체크리스트
     pdf.draw_section_header("자. 사업장 자가점검표")
     pdf.draw_sub_header("1) 정기 점검 체크리스트")
     checklist = [
