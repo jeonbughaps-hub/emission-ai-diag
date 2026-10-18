@@ -617,9 +617,10 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [22, 26, 60, 26, 26, 30])
+    # 💡 측정일 컬럼 너비를 26 -> 32로 대폭 넓혀 글자 잘림 완벽 방지
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [18, 32, 60, 25, 25, 30])
 
-    # 💡 냉각탑 & 열교환기 5열(Column) 동적 생성 로직
+    # 💡 냉각탑 & 열교환기 5열(Column) 동적 생성 로직 (날짜 잘림 방지 너비 적용)
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
@@ -629,7 +630,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     next_idx = 2
     if cooling_rows:
         pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
-        pdf.draw_zebra_table(["측정일", "시설명", "결과(농도/편차)", "기준", "판정"], cooling_rows, [30, 50, 45, 35, 30])
+        # 💡 측정일 컬럼 너비 확보
+        pdf.draw_zebra_table(["측정일", "시설명", "결과(농도/편차)", "기준", "판정"], cooling_rows, [32, 46, 45, 35, 32])
         next_idx += 1
 
     pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
