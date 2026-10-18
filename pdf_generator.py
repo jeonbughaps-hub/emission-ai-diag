@@ -294,7 +294,6 @@ class ProfessionalPDF(FPDF):
         self.ln(1)
 
     def _wrap_text(self, text, max_width, font_size):
-        """한글·영문을 모두 고려해 글자 폭 기준으로 줄바꿈합니다."""
         self.set_font(self._fn(), "", font_size)
         text = _safe_text(text)
         result = []
@@ -314,7 +313,6 @@ class ProfessionalPDF(FPDF):
         return result or ["-"]
 
     def draw_zebra_table(self, headers, rows, col_widths):
-        """긴 셀 자동 줄바꿈, 동적 행 높이, 페이지 이동 및 머리글 반복."""
         fn = self._fn()
         if not headers or not col_widths:
             return
@@ -562,10 +560,6 @@ def _record_value(record, key, default="-"):
 
 
 def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_data: dict, station_name: str) -> bytes:
-    """
-    app.py의 기존 호출과 호환되는 PDF 생성 함수입니다.
-    함수명과 매개변수는 변경하지 않았습니다.
-    """
     ai_data = ai_data if isinstance(ai_data, dict) else {}
     user_info = user_info if isinstance(user_info, dict) else {}
     air_data = air_data if isinstance(air_data, dict) else {}
@@ -651,23 +645,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ldar_rows, [25, 30, 25, 25, 45, 35]
     )
 
-    pdf.draw_sub_header("3) 시설별 진단 결과 및 추가 확인사항")
-    parsed_items = data.get("parsed_items", [])
-    item_rows = []
-    if isinstance(parsed_items, list):
-        for item in parsed_items:
-            if isinstance(item, dict):
-                item_rows.append([
-                    _record_value(item, "facility", _record_value(item, "item")),
-                    _record_value(item, "result", _record_value(item, "status")),
-                    _record_value(item, "risk"),
-                    _record_value(item, "recommendation", _record_value(item, "action")),
-                ])
-    if item_rows:
-        pdf.draw_zebra_table(["시설·항목", "확인 결과", "위험도", "권고 조치"], item_rows, [42, 38, 25, 80])
-    else:
-        pdf.draw_text_box("별도 시설별 항목 데이터가 추출되지 않았습니다. 원본 진단 결과의 항목별 내용을 검토해 주세요.")
-
     # 마. 위험도
     pdf.draw_section_header("마. 위험도 평가 및 행정처분 참고")
     pdf.draw_sub_header("1) 항목별 위험도 평가")
@@ -705,64 +682,39 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     pdf.draw_sub_header("2) AI 정밀 진단 종합 의견")
     pdf.draw_text_box(data.get("overall_opinion", "-"))
 
-    pdf.draw_sub_header("3) 우선 개선 조치 요약")
-    actions = data.get("priority_actions", [])
-    action_rows = []
-    if isinstance(actions, list):
-        for item in actions:
-            if isinstance(item, dict):
-                action_rows.append([
-                    _record_value(item, "priority"), _record_value(item, "action"),
-                    _record_value(item, "deadline"), _record_value(item, "owner")
-                ])
-            elif isinstance(item, str):
-                action_rows.append(["-", item, "-", "-"])
-    pdf.draw_zebra_table(["우선순위", "조치사항", "권고 기한", "담당"], action_rows, [28, 88, 35, 34])
-
-    # 사. 법령
+    # 사. 법령 (동적 데이터를 지우고 고정 안내 표로 복원)
     pdf.draw_section_header("사. 관련 규제 및 법령 참고사항")
-    pdf.draw_sub_header("1) 법령 검토 목록")
-    laws = data.get("law_references", [])
-    law_rows = []
-    if isinstance(laws, list):
-        for item in laws:
-            if isinstance(item, dict):
-                law_rows.append([
-                    _record_value(item, "law_name", _record_value(item, "name")),
-                    _record_value(item, "article", _record_value(item, "provision")),
-                    _record_value(item, "summary", _record_value(item, "description")),
-                    _record_value(item, "checked_date"),
-                ])
-    pdf.draw_zebra_table(["법령명", "조문", "검토 내용", "확인일"], law_rows, [43, 27, 90, 25])
-    pdf.draw_text_box(
-        "※ 법령 목록이 입력되지 않은 경우 최신 법령 확인이 완료된 것으로 볼 수 없습니다. "
-        "법령 조문과 처분 기준은 국가법령정보센터 및 관할 기관의 최신 안내를 확인한 후 사용하세요."
-    )
+    pdf.draw_sub_header("1) 벌칙 및 과태료 규정")
+    law1 = [
+        ["[벌칙] 시설개선 조치명령 미이행자", "5년 이하 징역 또는 5천만원 이하 벌금"], 
+        ["[벌칙] 비산배출시설 미신고 설치·운영자", "300만원 이하 벌금"], 
+        ["[과태료] 정기점검을 받지 아니한 자", "300만원 이하 과태료"], 
+        ["[과태료] 변경신고를 하지 아니한 자", "200만원 이하 과태료"]
+    ]
+    pdf.draw_zebra_table(["위반 대상", "벌칙 및 과태료 내용"], law1, [80, 105])
 
-    # 아. 변경신고 및 후속 조치
+    pdf.draw_sub_header("2) 위반 횟수별 가중 행정처분 기준")
+    law2 = [
+        ["신고/변경신고 미이행", "경고", "경고", "조업정지 10일", "조업정지 20일"], 
+        ["시설관리기준 미준수", "경고", "조업정지 10일", "조업정지 20일", "조업정지 20일"], 
+        ["정기점검 미수검", "경고", "경고", "조업정지 10일", "조업정지 20일"], 
+        ["조치명령 미이행", "조업정지 10일", "조업정지 20일", "조업정지 30일", "조업정지 30일"]
+    ]
+    pdf.draw_zebra_table(["위반 사항", "1차 처분", "2차 처분", "3차 처분", "4차 처분"], law2, [45, 35, 35, 35, 35])
+
+    # 아. 변경신고 및 후속 조치 (동적 데이터를 지우고 고정 안내 문구로 복원)
     pdf.draw_section_header("아. 변경신고 및 추진체계")
-    pdf.draw_sub_header("1) 변경신고 검토 시 확인할 사항")
+    pdf.draw_sub_header("1) 비산배출시설 의무 변경신고 사유")
     pdf.draw_text_box(
-        "비산배출시설 신고 사업장은 신고 내용에 변경이 발생한 경우 적용 법령에 따른 변경신고 대상 여부와 제출 기한을 확인해야 합니다.\n"
-        "1. 사업장 명칭 또는 대표자 변경 여부\n"
-        "2. 비산배출시설의 신설·증설·교체·폐쇄 여부\n"
-        "3. 시설관리계획 또는 방지시설 구성 변경 여부\n"
-        "4. 기존 신고서 기재사항의 변경 또는 정정 필요 여부\n"
-        "5. 변경신고서 및 첨부 자료 제출 여부"
+        "※ 비산배출시설을 신고한 사업자는 다음 사유 발생 시 의무적으로 변경신고를 해야 합니다.\n"
+        "1. 사업장 명칭 또는 대표자를 변경하는 경우\n"
+        "2. 비산배출시설 관리계획을 변경하는 경우\n"
+        "3. 비산배출시설을 임대, 증설, 교체 또는 일부 폐쇄하는 경우\n"
+        "4. 신고서의 오기, 누락 등 변경사유가 분명한 경우\n"
+        "5. 비산배출시설을 완전히 폐쇄하는 경우"
     )
-    pdf.draw_sub_header("2) 후속 조치 관리표")
-    followups = data.get("followup_actions", [])
-    followup_rows = []
-    if isinstance(followups, list):
-        for item in followups:
-            if isinstance(item, dict):
-                followup_rows.append([
-                    _record_value(item, "action"), _record_value(item, "owner"),
-                    _record_value(item, "deadline"), _record_value(item, "status")
-                ])
-    pdf.draw_zebra_table(["후속 조치", "담당자", "목표 기한", "진행 상태"], followup_rows, [80, 35, 35, 35])
 
-    # 자. 체크리스트
+    # 자. 체크리스트 (고정형 빈 점검표 복원)
     pdf.draw_section_header("자. 사업장 자가점검표")
     pdf.draw_sub_header("1) 정기 점검 체크리스트")
     checklist = [
@@ -776,7 +728,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     pdf.draw_zebra_table(["확인", "주기", "점검 항목"], checklist, [20, 30, 135])
 
-    pdf.draw_sub_header("2) 점검 결과 기록")
+    pdf.draw_sub_header("2) 점검 결과 기록 (사업장 보관용)")
     pdf.draw_zebra_table(
         ["점검일", "점검 항목", "결과", "조치 내용", "확인자"],
         [["", "", "", "", ""] for _ in range(4)],
