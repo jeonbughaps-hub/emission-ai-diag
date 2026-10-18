@@ -180,8 +180,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
   "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "cooling": {{ "data": [
-    {{"date": "2023-04-10", "facility": "냉각탑", "result": "적합", "recommendation": "TOC 2.6ppm (기준 50ppm 미만 만족)"}},
-    {{"date": "2024-05-12", "facility": "열교환기(CK-1)", "result": "적합", "recommendation": "편차 0.1ppm (기준 1ppm 미만 만족)"}}
+    {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}},
+    {{"date": "2024-05-12", "facility": "열교환기(CK-1)", "value": "편차 0.1ppm", "limit": "1ppm 미만", "result": "적합"}}
   ]}},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
