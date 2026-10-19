@@ -355,3 +355,4 @@ if uploaded_logs:
             with st.expander("🛠️ AI 엔진 Raw Data (디버깅용)"):
                 st.json(diag_result)
     else:
+        st.error("유효한 PDF 파일을 찾을 수 없습니다. (ZIP 내부 확인 필요)")
