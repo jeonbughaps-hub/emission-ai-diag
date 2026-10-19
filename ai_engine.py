@@ -21,9 +21,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 FAISS_DB_DIR = "faiss_vector_db"
 
-# =====================================================================
-# 🧠 1. 지식베이스 구축 및 로드 (RAG 시스템)
-# =====================================================================
 def get_api_key():
     key = os.environ.get("GOOGLE_API_KEY")
     if not key:
@@ -82,9 +79,6 @@ def load_vector_db():
             return None
     return None
 
-# =====================================================================
-# 📄 2. 사용자 업로드 문서 처리 및 AI 진단
-# =====================================================================
 def extract_pdfs_from_source(uploaded_files):
     pdf_list = []
     if not uploaded_files: return pdf_list
@@ -133,7 +127,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             
     client = genai.Client(api_key=api_key)
     
-    # 💡 [업데이트] 업종별 농도 기준 및 저감효율 변수 셋팅
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
         limit_text = "100ppm 미만 또는 저감효율 80% 이상"
@@ -160,18 +153,18 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
 [★ 최우선 지시사항 : 데이터 100% 전수조사 추출 ★]
 1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
-2. 방지시설 농도 (prevention): '측정일시', '시설명', '측정결과 후단' 칼럼의 값을 추출하세요. (THC 측정기기 정도검사 결과는 제외)
-   - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 전단과 후단의 농도를 비교하여 산출한 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)을 '적합'으로 처리하세요.
-   - 결과(value) 항목에는 "후단 107.7ppm (효율 92%)" 형태로 농도와 효율을 함께 기재하세요.
+2. 방지시설 농도 (prevention): 문서에 기록된 '실제 측정일자', '시설명', '측정결과(전단/후단)' 값을 추출하세요. (THC 측정기기 정도검사 결과는 절대 제외)
+   - 🚨 날짜(date) 추출 경고: 문서에 적힌 해당 데이터의 '실제 측정 연도와 월'을 절대 혼동하지 마세요. (예: 24년 1월 측정값을 24년 10월로 잘못 추출하는 환각 엄격히 금지)
+   - 🚨 결과(value) 작성 규칙 (반드시 아래 양식 준수):
+     > 전단과 후단이 모두 측정된 경우: "전단: OOppm, 후단: OOppm (효율 OO%)"
+     > 후단만 측정된 경우: "후단: OOppm" (※ 후단만 있는 경우 효율을 임의로 계산하거나 적지 마세요)
+   - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 문서상 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)은 반드시 '적합'으로 처리하세요.
 3. LDAR 누출 점검 (ldar): 2022년, 2023년, 2024년, 2025년 등 문서에 존재하는 '모든 연도'의 점검 실적을 단 한 해도 빼놓지 말고 전수조사하여 각각 추출하세요.
 
-[🚨 냉각탑 및 열교환기 정밀 분석 필수 - 연도별 누락 절대 금지 🚨]
-문서 내에 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'와 관련된 연 1회 점검 기록이 있는지 반드시 확인하고, 발견되면 `cooling` 객체의 `data` 배열에 담으세요.
-- ❗️가장 중요: 2022년, 2023년, 2024년, 2025년 등 과거 연도의 데이터가 존재한다면 '절대 중간 연도를 빼먹지 말고' 모든 연도의 점검 기록을 개별 행(객체)으로 전부 추가해야 합니다. (AI 모델의 임의 요약 및 스킵을 엄격히 금지합니다)
-- 측정 날짜(date)를 반드시 추출하여 `date` 속성에 기입하세요. (예: "2024-05-12")
-- 냉각탑: 냉각수 TOC 분석 실시 여부 및 TOC 농도 50ppm 미만 유지 여부 (초과 시 부적합)
-- 열교환기: 전·후단 냉각수 농도 편차 분석 실시 여부 및 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합)
-📌 [특수 계산 조건]: 만약 열교환기 항목에 측정 수치가 하나만 기재되어 있다면, 이는 '후단' 수치로 간주합니다. 이 경우 해당 연도의 '냉각탑 TOC 분석 결과값'을 찾아 열교환기의 '전단' 수치로 대입하여 두 수치의 편차를 직접 계산하세요.
+[🚨 냉각탑 및 열교환기 정밀 분석 필수 - 환각 엄격 금지 🚨]
+- ❗️문서에 냉각탑이나 열교환기 관련 점검 기록이 **실제로 존재하는 경우에만** 추출하여 `cooling` 배열에 담으세요.
+- ❗️만약 관련 기록이 전혀 없다면, 절대 지어내지 말고 `cooling` 배열을 빈 배열(`[]`)로 비워두세요.
+- 기록이 존재할 경우, 측정 날짜(date)를 반드시 추출하여 `date` 속성에 기입하세요. (예: "2024-05-12")
 
 [🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
 서술형 의견(overall_opinion 등)을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요. 문서에 없는 과거 이력을 상상하거나 지어내지 마십시오. 문자열 안에 큰따옴표(")를 사용할 때는 반드시 백슬래시(\)로 이스케이프 처리하세요.
@@ -183,11 +176,10 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 반드시 마크다운 없이 순수 JSON 객체로만 출력하세요. 속성명과 구조를 절대 바꾸지 마세요.
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "107.7ppm (효율 92%)", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(7)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "cooling": {{ "data": [
-    {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}},
-    {{"date": "2024-05-12", "facility": "열교환기(CK-1)", "value": "편차 0.1ppm", "limit": "1ppm 미만", "result": "적합"}}
+    {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
   ]}},
   "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
   "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
@@ -198,7 +190,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
-        # 💡 [업데이트] JSON 문법 오류 원천 차단 모드
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
@@ -220,6 +211,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             parsed_data = json.loads(raw_text, strict=False)
                 
         return {"parsed": parsed_data, "raw": raw_text}
+    
     except Exception as e:
         st.error(f"1단계 데이터 추출 중 API 오류 발생: {e}")
         return {"parsed": {}, "raw": f"에러 발생: {e}"}
