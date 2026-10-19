@@ -289,7 +289,6 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 8, txt, 0, 1, "L")
         self.ln(1)
 
-    # 💡 [업데이트] 단어(공백) 단위 줄바꿈 로직: "107.7ppm" 등이 중간에 잘리지 않도록 보호
     def _wrap_text(self, text, max_width, font_size):
         self.set_font(self._fn(), "", font_size)
         text = _safe_text(text)
@@ -329,7 +328,7 @@ class ProfessionalPDF(FPDF):
         if not headers or not col_widths: return
         table_width = sum(col_widths)
         x0 = LEFT
-        base_font_size = 9.0  # 💡 깔끔한 표 출력을 위해 기본 폰트 사이즈 하향 조정
+        base_font_size = 9.0
         line_h = 5.0
         pad_x, pad_y = 2.0, 2.5
         bottom_limit = BODY_BOTTOM
@@ -371,14 +370,13 @@ class ProfessionalPDF(FPDF):
             cell_fonts = []
             wrapped_cells = []
             
-            # 💡 [업데이트] 표 너비에 텍스트가 넘치면 스마트하게 폰트를 지속 축소하는 로직
+            # 💡 [업데이트] 날짜 및 구분 텍스트가 줄바꿈 되지 않도록 폰트를 5.0까지 과감하게 축소 허용
             for val, w in zip(values, col_widths):
                 c_font = base_font_size
                 tokens = str(val).replace('\n', ' ').split()
                 
-                while c_font > 6.0:
+                while c_font > 5.0:
                     self.set_font(fn, "", c_font)
-                    # 긴 단어가 셀 너비를 초과하면 폰트 축소
                     if any(self.get_string_width(tok) > w - 2 * pad_x for tok in tokens):
                         c_font -= 0.5
                         continue
@@ -662,8 +660,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 [업데이트] 표 너비 최적화: 총합 190을 유지하며 긴 텍스트 공간 확보
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [12, 22, 42, 52, 44, 18])
+    # 💡 [업데이트] 표 너비 최적화: 구분과 측정일 공간을 약간 더 넓혀 날짜가 한 줄에 나오도록 재조정 (총합 190)
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 25, 38, 52, 43, 18])
 
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
@@ -685,7 +683,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     ]
     pdf.draw_zebra_table(
         ["점검 연도", "대상 개소", "누출 수", "누출률", "재측정·조치", "최종 판정"],
-        ldar_rows, [25, 30, 25, 25, 45, 40]
+        ldar_rows, [22, 28, 20, 25, 55, 40]
     )
 
     # 마. 위험도
@@ -769,7 +767,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
         ["□", "반기", "LDAR 점검, 누출 수리 및 재측정 기록 확인"],
         ["□", "연간", "보고서 제출 의무와 제출 기한 확인"],
     ]
-    pdf.draw_zebra_table(["확인", "주기", "점검 항목"], checklist, [20, 30, 140])
+    pdf.draw_zebra_table(["확인", "주 주기", "점검 항목"], checklist, [20, 30, 140])
 
     pdf.draw_sub_header("2) 점검 결과 기록 (사업장 보관용)")
     pdf.draw_zebra_table(
