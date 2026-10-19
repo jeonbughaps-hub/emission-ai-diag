@@ -133,11 +133,16 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
             
     client = genai.Client(api_key=api_key)
     
+    # 💡 [업데이트] 업종별 농도 기준 및 저감효율 변수 셋팅
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
-        limit_text = "100ppm"
+        limit_text = "100ppm 미만 또는 저감효율 80% 이상"
+        ppm_limit = "100"
+        eff_limit = "80"
     else:
-        limit_text = "50ppm"
+        limit_text = "50ppm 미만 또는 저감효율 90% 이상"
+        ppm_limit = "50"
+        eff_limit = "90"
         
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -156,6 +161,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 [★ 최우선 지시사항 : 데이터 100% 전수조사 추출 ★]
 1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
 2. 방지시설 농도 (prevention): '측정일시', '시설명', '측정결과 후단' 칼럼의 값을 추출하세요. (THC 측정기기 정도검사 결과는 제외)
+   - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 전단과 후단의 농도를 비교하여 산출한 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)을 '적합'으로 처리하세요.
+   - 결과(value) 항목에는 "후단 107.7ppm (효율 92%)" 형태로 농도와 효율을 함께 기재하세요.
 3. LDAR 누출 점검 (ldar): 2022년, 2023년, 2024년, 2025년 등 문서에 존재하는 '모든 연도'의 점검 실적을 단 한 해도 빼놓지 말고 전수조사하여 각각 추출하세요.
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 - 연도별 누락 절대 금지 🚨]
@@ -167,7 +174,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 📌 [특수 계산 조건]: 만약 열교환기 항목에 측정 수치가 하나만 기재되어 있다면, 이는 '후단' 수치로 간주합니다. 이 경우 해당 연도의 '냉각탑 TOC 분석 결과값'을 찾아 열교환기의 '전단' 수치로 대입하여 두 수치의 편차를 직접 계산하세요.
 
 [🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
-서술형 의견(overall_opinion 등)을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요. 문서에 없는 과거 이력을 상상하거나 지어내지 마십시오.
+서술형 의견(overall_opinion 등)을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요. 문서에 없는 과거 이력을 상상하거나 지어내지 마십시오. 문자열 안에 큰따옴표(")를 사용할 때는 반드시 백슬래시(\)로 이스케이프 처리하세요.
 
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
@@ -176,7 +183,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 반드시 마크다운 없이 순수 JSON 객체로만 출력하세요. 속성명과 구조를 절대 바꾸지 마세요.
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "5.4", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "2025-05-26", "facility": "흡착에의한시설(7)", "value": "107.7ppm (효율 92%)", "limit": "{limit_text}", "result": "적합"}} ] }},
   "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
   "cooling": {{ "data": [
     {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}},
@@ -191,27 +198,26 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
+        # 💡 [업데이트] JSON 문법 오류 원천 차단 모드
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
-            config=types.GenerateContentConfig(temperature=0.0)
+            config=types.GenerateContentConfig(
+                temperature=0.0,
+                response_mime_type="application/json"
+            )
         )
         
         raw_text = response.text.strip()
         
-        if "```json" in raw_text:
-            raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_text:
-            raw_text = raw_text.split("```")[1].split("```")[0].strip()
-            
         try:
             parsed_data = json.loads(raw_text, strict=False)
-        except:
-            match = re.search(r'\{.*\}', raw_text.replace('\n', ''), re.DOTALL)
-            if match:
-                parsed_data = json.loads(match.group(0), strict=False)
-            else:
-                parsed_data = {}
+        except json.JSONDecodeError:
+            if "```json" in raw_text:
+                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw_text:
+                raw_text = raw_text.split("```")[1].split("```")[0].strip()
+            parsed_data = json.loads(raw_text, strict=False)
                 
         return {"parsed": parsed_data, "raw": raw_text}
     except Exception as e:
