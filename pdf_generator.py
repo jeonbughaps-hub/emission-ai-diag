@@ -6,7 +6,6 @@ from typing import Any
 
 from fpdf import FPDF
 
-# 유틸리티 값이 없을 경우를 대비한 안전 기본값 정의
 FONT_FILE_NAME = "NanumGothic-Regular.ttf"
 FONT_BOLD_NAME = "NanumGothic-Bold.ttf"
 BRAND_NAVY = (24, 43, 73)
@@ -60,25 +59,18 @@ def ensure_korean_font():
     except Exception as exc:
         print(f"폰트 다운로드 실패: {exc}")
 
-
 def _safe_text(value: Any, default="-"):
-    if value is None:
-        return default
+    if value is None: return default
     text = str(value).replace("\r", "").strip()
     return text if text else default
 
-
 def _as_float(value):
-    try:
-        return float(str(value).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return None
-
+    try: return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError): return None
 
 def get_aqi_status(val, item_type):
     v = _as_float(val)
-    if v is None:
-        return "자료 없음", COLOR_GRAY, 0.0
+    if v is None: return "자료 없음", COLOR_GRAY, 0.0
     if item_type == "PM10":
         if v <= 30: return "좋음", (50, 150, 255), min(max(v / 150, 0), 1)
         if v <= 80: return "보통", (60, 180, 110), min(max(v / 150, 0), 1)
@@ -90,7 +82,6 @@ def get_aqi_status(val, item_type):
         if v <= 0.150: return "나쁨", COLOR_AMBER, min(max(v / 0.150, 0), 1)
         return "매우 나쁨", COLOR_RED, 1.0
     return "측정불가", COLOR_GRAY, 0.0
-
 
 def _grade_color(grade, score=None):
     g = _safe_text(grade, "").upper()
@@ -105,7 +96,6 @@ def _grade_color(grade, score=None):
         if n >= 60: return COLOR_AMBER
         return COLOR_RED
     return COLOR_GRAY
-
 
 class ProfessionalPDF(FPDF):
     def __init__(self, toc_data=None):
@@ -138,8 +128,7 @@ class ProfessionalPDF(FPDF):
         return self._fn()
 
     def header(self):
-        if self.page_no() <= 2:
-            return
+        if self.page_no() <= 2: return
         fn = self._fn()
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
@@ -155,8 +144,7 @@ class ProfessionalPDF(FPDF):
         self.set_xy(LEFT, 18)
 
     def footer(self):
-        if self.page_no() <= 2:
-            return
+        if self.page_no() <= 2: return
         self.set_y(-13)
         y = self.get_y()
         self.set_draw_color(*COLOR_BORDER)
@@ -168,8 +156,7 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 4, f"- {self.page_no() - 2} -", 0, 0, "C")
 
     def check_page_break(self, required_height):
-        if self.get_y() + required_height > BODY_BOTTOM:
-            self.add_page()
+        if self.get_y() + required_height > BODY_BOTTOM: self.add_page()
 
     def draw_cover(self, company, address, industry, permit_no, date_str):
         fn = self._fn()
@@ -228,8 +215,7 @@ class ProfessionalPDF(FPDF):
         col_w = 166 / 3
         for idx, label in enumerate(labels):
             x = 22 + idx * col_w
-            if idx:
-                self.line(x, sign_y, x, sign_y + 30)
+            if idx: self.line(x, sign_y, x, sign_y + 30)
             self.set_xy(x, sign_y + 4)
             self.set_font(fn, "B", 10)
             self.set_text_color(*COLOR_MUTED)
@@ -273,8 +259,7 @@ class ProfessionalPDF(FPDF):
 
     def draw_section_header(self, txt, set_section=True):
         fn = self._fn()
-        if set_section:
-            self._section = txt
+        if set_section: self._section = txt
         self.check_page_break(25)
         self.ln(4)
         y = self.get_y()
@@ -299,13 +284,11 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 8, txt, 0, 1, "L")
         self.ln(1)
 
-    # 💡 [업데이트] 셀 너비에 맞춰 폰트 크기를 자동 계산하는 함수
     def _get_optimal_font_size(self, text, max_width, default_size, min_size=6.0):
         size = default_size
         text = _safe_text(text)
         words = text.replace('\n', ' ').split()
-        if not words:
-            return size
+        if not words: return size
             
         self.set_font(self._fn(), "", size)
         longest_word = max(words, key=lambda w: self.get_string_width(w))
@@ -338,8 +321,7 @@ class ProfessionalPDF(FPDF):
 
     def draw_zebra_table(self, headers, rows, col_widths):
         fn = self._fn()
-        if not headers or not col_widths:
-            return
+        if not headers or not col_widths: return
         table_width = sum(col_widths)
         x0 = LEFT
         font_size, line_h = 10.5, 5.5
@@ -380,7 +362,6 @@ class ProfessionalPDF(FPDF):
             values = list(row[:len(headers)])
             values.extend(["-"] * (len(headers) - len(values)))
             
-            # 💡 [업데이트] 셀 너비 초과 시 개별 폰트 자동 축소 적용
             cell_font_sizes = [self._get_optimal_font_size(val, w - 2 * pad_x, font_size) for val, w in zip(values, col_widths)]
             
             wrapped = [
@@ -576,15 +557,12 @@ class ProfessionalPDF(FPDF):
 
 def _get_rows(data, section, key="data"):
     value = data.get(section, {})
-    if not isinstance(value, dict):
-        return []
+    if not isinstance(value, dict): return []
     rows = value.get(key, [])
     return rows if isinstance(rows, list) else []
 
-
 def _record_value(record, key, default="-"):
-    if not isinstance(record, dict):
-        return default
+    if not isinstance(record, dict): return default
     return _safe_text(record.get(key), default)
 
 
@@ -661,10 +639,9 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 폰트 확대에 맞춰 측정일이 꺾이지 않도록 컬럼 너비 분배
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [18, 32, 60, 30, 20, 30])
+    # 💡 [컬럼 너비 최적화] 기준(limit)과 결과(value) 컬럼이 넉넉하게 출력되도록 너비 조정
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [15, 25, 45, 45, 40, 20])
 
-    # 💡 5열로 분리된 냉각탑 및 열교환기 팩트 데이터 표 생성
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
@@ -674,7 +651,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     next_idx = 2
     if cooling_rows:
         pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
-        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [32, 48, 45, 35, 30])
+        # 💡 [컬럼 너비 최적화] 결과와 기준이 한 줄에 깔끔하게 나오도록 너비 조정
+        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [25, 45, 50, 45, 25])
         next_idx += 1
 
     pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
