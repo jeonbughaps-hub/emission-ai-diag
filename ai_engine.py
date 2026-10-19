@@ -161,7 +161,9 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
    - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 문서상 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)은 반드시 '적합'으로 처리하세요.
 
 3. LDAR 누출 점검 (ldar): 문서에 '실제로 기록되어 있는 연도'의 점검 실적만 추출하세요. 
-   - 🚨 환각 엄격 금지: 문서에 2022년 점검 기록이 없으면 절대 2022년 데이터를 임의로 지어내지 마세요. 제공된 문서에 존재하는 연도(예: 2023년, 2024년 등)만 추출하세요.
+   - 🚨 환각 엄격 금지: 문서에 없는 연도는 절대 지어내지 마세요.
+   - 🚨 데이터 누락 방지 (매우 중요): 종합 의견(overall_opinion)에 2023년, 2024년 등 누출 및 조치 내역을 서술할 것이라면, **반드시 그 내용을 `ldar` 배열에도 동일하게 객체로 생성**해야 합니다. 종합 의견에는 적어놓고 정작 표(배열)에는 데이터를 누락하여 '자료 없음'이 뜨게 만드는 실수를 절대 하지 마세요.
+   - 문서에 '점검 대상 개소'나 '누출률' 정보가 부족하더라도 "-" 또는 "기록없음"으로 채워서라도 JSON 구조를 무조건 완성하세요. (예: {{"year": "2023", "target_count": "-", "leak_count": "3", "leak_rate": "-", "recheck_done": "수리 조치 완료", "result": "적합"}})
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 - 환각 엄격 금지 🚨]
 - ❗️문서에 냉각탑이나 열교환기 관련 점검 기록이 **실제로 존재하는 경우에만** 추출하여 `cooling` 배열에 담으세요.
@@ -179,7 +181,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(7)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2024", "target_count": "-", "leak_count": "3", "leak_rate": "-", "recheck_done": "수리완료", "result": "적합"}} ] }},
   "cooling": {{ "data": [
     {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
   ]}},
