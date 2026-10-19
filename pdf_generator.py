@@ -28,7 +28,7 @@ try:
     if U_HBG: BRAND_HEADER_BG = U_HBG
 except ImportError:
     def get_env_office(addr):
-        return "성동면"
+        return "삼일동"
     def get_limit_ppm(ind):
         return "100ppm" if any(x in str(ind).upper() for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]) else "50ppm"
 
@@ -49,6 +49,7 @@ COLOR_RED = (190, 61, 61)
 COLOR_BLUE = (48, 112, 176)
 COLOR_GRAY = (135, 145, 157)
 
+
 def ensure_korean_font():
     try:
         if not os.path.exists(FONT_FILE_NAME):
@@ -58,22 +59,21 @@ def ensure_korean_font():
     except Exception as exc:
         print(f"폰트 다운로드 실패: {exc}")
 
+
 def _safe_text(value: Any, default="-"):
-    if value is None:
-        return default
+    if value is None: return default
     text = str(value).replace("\r", "").strip()
     return text if text else default
 
+
 def _as_float(value):
-    try:
-        return float(str(value).replace(",", "").strip())
-    except (TypeError, ValueError):
-        return None
+    try: return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError): return None
+
 
 def get_aqi_status(val, item_type):
     v = _as_float(val)
-    if v is None:
-        return "자료 없음", COLOR_GRAY, 0.0
+    if v is None: return "자료 없음", COLOR_GRAY, 0.0
     if item_type == "PM10":
         if v <= 30: return "좋음", (50, 150, 255), min(max(v / 150, 0), 1)
         if v <= 80: return "보통", (60, 180, 110), min(max(v / 150, 0), 1)
@@ -85,6 +85,7 @@ def get_aqi_status(val, item_type):
         if v <= 0.150: return "나쁨", COLOR_AMBER, min(max(v / 0.150, 0), 1)
         return "매우 나쁨", COLOR_RED, 1.0
     return "측정불가", COLOR_GRAY, 0.0
+
 
 def _grade_color(grade, score=None):
     g = _safe_text(grade, "").upper()
@@ -132,8 +133,7 @@ class ProfessionalPDF(FPDF):
         return self._fn()
 
     def header(self):
-        if self.page_no() <= 2:
-            return
+        if self.page_no() <= 2: return
         fn = self._fn()
         self.set_font(fn, "B", 9)
         self.set_text_color(*BRAND_NAVY)
@@ -149,8 +149,7 @@ class ProfessionalPDF(FPDF):
         self.set_xy(LEFT, 18)
 
     def footer(self):
-        if self.page_no() <= 2:
-            return
+        if self.page_no() <= 2: return
         self.set_y(-13)
         y = self.get_y()
         self.set_draw_color(*COLOR_BORDER)
@@ -162,8 +161,7 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 4, f"- {self.page_no() - 2} -", 0, 0, "C")
 
     def check_page_break(self, required_height):
-        if self.get_y() + required_height > BODY_BOTTOM:
-            self.add_page()
+        if self.get_y() + required_height > BODY_BOTTOM: self.add_page()
 
     def draw_cover(self, company, address, industry, permit_no, date_str):
         fn = self._fn()
@@ -222,8 +220,7 @@ class ProfessionalPDF(FPDF):
         col_w = 166 / 3
         for idx, label in enumerate(labels):
             x = 22 + idx * col_w
-            if idx:
-                self.line(x, sign_y, x, sign_y + 30)
+            if idx: self.line(x, sign_y, x, sign_y + 30)
             self.set_xy(x, sign_y + 4)
             self.set_font(fn, "B", 10)
             self.set_text_color(*COLOR_MUTED)
@@ -267,8 +264,7 @@ class ProfessionalPDF(FPDF):
 
     def draw_section_header(self, txt, set_section=True):
         fn = self._fn()
-        if set_section:
-            self._section = txt
+        if set_section: self._section = txt
         self.check_page_break(25)
         self.ln(4)
         y = self.get_y()
@@ -293,23 +289,6 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 8, txt, 0, 1, "L")
         self.ln(1)
 
-    def _get_optimal_font_size(self, text, max_width, default_size, min_size=6.0):
-        size = default_size
-        text = _safe_text(text)
-        words = text.replace('\n', ' ').split()
-        if not words:
-            return size
-            
-        self.set_font(self._fn(), "", size)
-        longest_word = max(words, key=lambda w: self.get_string_width(w))
-        
-        while self.get_string_width(longest_word) > max_width and size > min_size:
-            size -= 0.5
-            self.set_font(self._fn(), "", size)
-            
-        self.set_font(self._fn(), "", default_size)
-        return size
-
     def _wrap_text(self, text, max_width, font_size):
         self.set_font(self._fn(), "", font_size)
         text = _safe_text(text)
@@ -331,25 +310,25 @@ class ProfessionalPDF(FPDF):
 
     def draw_zebra_table(self, headers, rows, col_widths):
         fn = self._fn()
-        if not headers or not col_widths:
-            return
+        if not headers or not col_widths: return
         table_width = sum(col_widths)
         x0 = LEFT
-        font_size, line_h = 10.5, 5.5
+        base_font_size = 9.5  # 💡 글씨를 기본적으로 약간 작게 설정하여 여유 공간 확보
+        line_h = 5.0
         pad_x, pad_y = 2.0, 2.5
         bottom_limit = BODY_BOTTOM
 
         def draw_header():
             y = self.get_y()
             x = x0
-            self.set_font(fn, "B", 11)
+            self.set_font(fn, "B", 10.5)
             self.set_text_color(*BRAND_NAVY)
             self.set_fill_color(*BRAND_HEADER_BG)
             self.set_draw_color(185, 201, 220)
             heights = []
             wrapped_headers = []
             for title, width in zip(headers, col_widths):
-                lines = self._wrap_text(title, width - 2 * pad_x, 11)
+                lines = self._wrap_text(title, width - 2 * pad_x, 10.5)
                 wrapped_headers.append(lines)
                 heights.append(max(10, len(lines) * line_h + 4))
             header_h = max(heights)
@@ -361,7 +340,7 @@ class ProfessionalPDF(FPDF):
             self.set_xy(x0, y + header_h)
 
         if not rows:
-            self.set_font(fn, "", 10.5)
+            self.set_font(fn, "", base_font_size)
             self.set_text_color(*COLOR_MUTED)
             self.set_fill_color(*BRAND_LIGHT_BG)
             self.cell(table_width, 11, "자료 없음 — 입력 또는 추출된 데이터가 없습니다.", 1, 1, "C", True)
@@ -373,20 +352,29 @@ class ProfessionalPDF(FPDF):
             values = list(row[:len(headers)])
             values.extend(["-"] * (len(headers) - len(values)))
             
-            cell_font_sizes = [self._get_optimal_font_size(val, w - 2 * pad_x, font_size) for val, w in zip(values, col_widths)]
+            # 💡 [핵심] 셀 너비에 맞춰 폰트 크기를 동적으로 조절하여 튀어나오지 않게 맞춤
+            cell_fonts = []
+            wrapped_cells = []
             
-            wrapped = [
-                self._wrap_text(value, width - 2 * pad_x, c_font)
-                for value, width, c_font in zip(values, col_widths, cell_font_sizes)
-            ]
-            row_h = max(10, max(len(lines) for lines in wrapped) * line_h + 2 * pad_y)
+            for val, w in zip(values, col_widths):
+                c_font = base_font_size
+                self.set_font(fn, "", c_font)
+                while True:
+                    wrapped = self._wrap_text(val, w - 2 * pad_x, c_font)
+                    if len(wrapped) <= 3 or c_font <= 7.0: # 최대 3줄 안에 들어가도록 폰트를 7.0까지 점진 축소
+                        break
+                    c_font -= 0.5
+                cell_fonts.append(c_font)
+                wrapped_cells.append(wrapped)
+            
+            row_h = max(10, max(len(lines) for lines in wrapped_cells) * line_h + 2 * pad_y)
 
             if self.get_y() + row_h > bottom_limit:
                 self.add_page()
                 draw_header()
 
             y, x = self.get_y(), x0
-            for idx, (width, lines, c_font) in enumerate(zip(col_widths, wrapped, cell_font_sizes)):
+            for idx, (width, lines, c_font) in enumerate(zip(col_widths, wrapped_cells, cell_fonts)):
                 fill = BRAND_LIGHT_BG if row_idx % 2 else COLOR_WHITE
                 self.set_fill_color(*fill)
                 self.set_draw_color(*COLOR_BORDER)
@@ -568,15 +556,12 @@ class ProfessionalPDF(FPDF):
 
 def _get_rows(data, section, key="data"):
     value = data.get(section, {})
-    if not isinstance(value, dict):
-        return []
+    if not isinstance(value, dict): return []
     rows = value.get(key, [])
     return rows if isinstance(rows, list) else []
 
-
 def _record_value(record, key, default="-"):
-    if not isinstance(record, dict):
-        return default
+    if not isinstance(record, dict): return default
     return _safe_text(record.get(key), default)
 
 
@@ -653,8 +638,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 [업데이트] 표 너비 최적화: 결과와 기준 칼럼의 공간을 대폭 확보하여 글씨 축소를 줄임 (총합 190 고정)
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 24, 38, 48, 48, 18])
+    # 💡 [업데이트] 표 너비 최적화: 결과(55)와 기준(45) 칼럼의 공간을 대폭 확보하여 글씨 축소를 줄임 (총합 190)
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 23, 35, 55, 45, 18])
 
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
@@ -665,8 +650,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     next_idx = 2
     if cooling_rows:
         pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
-        # 💡 [업데이트] 열교환기 표 너비 최적화 (총합 190 고정)
-        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [24, 42, 47, 47, 30])
+        # 💡 [업데이트] 열교환기 표 너비 최적화 (총합 190)
+        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [25, 40, 50, 50, 25])
         next_idx += 1
 
     pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
