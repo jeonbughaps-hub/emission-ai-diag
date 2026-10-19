@@ -18,7 +18,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from pdf_generator import create_gov_report_pdf
-from utils import get_env_office
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -158,7 +157,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 
 [★ 최우선 지시사항 : 데이터 100% 전수조사 추출 ★]
 1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
-2. 방지시설 농도 (prevention): '측정일시', '시설명', '측정결과 후단' 칼럼의 값을 추출하세요. (THC 측정기기 정도검사 결과는 제외)
+2. 방지시설 농도 (prevention): '측정일시', '시설명', '측정결과 후단' 칼럼의 값을 추출하세요. 
+   - 🚨주의: THC 측정기기 정도검사의 기준에서 '결과' 부분은 철저히 무시하고 추출 대상에서 제외하세요.
 3. LDAR 누출 점검 (ldar): 2022년, 2023년, 2024년, 2025년 등 문서에 존재하는 '모든 연도'의 점검 실적을 단 한 해도 빼놓지 말고 전수조사하여 각각 추출하세요.
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 - 연도별 누락 절대 금지 🚨]
@@ -251,18 +251,25 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
 # =====================================================================
 # 🖥️ 3. Streamlit UI 및 메인 앱 실행
 # =====================================================================
-st.set_page_config(page_title="비산배출시설 정밀 자가진단 시스템", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="오프라인 AI 진단 보고서", page_icon="✨", layout="wide")
 
-st.title("🏭 비산배출시설 환경관리 정밀 진단 시스템")
-st.markdown("운영기록부(PDF/ZIP)를 업로드하여 법적 준수 여부를 진단하고 전문 보고서를 생성하세요.")
+st.markdown("""
+<style>
+.stButton>button { width: 100%; font-weight: bold; }
+.metric-box { padding: 15px; border-radius: 8px; border: 1px solid #e0e0e0; background-color: #f8f9fa; }
+</style>
+""", unsafe_allow_html=True)
 
-# 사이드바 설정
+st.title("✨ 비산배출시설 정밀 자가진단 (오프라인)")
+st.info("환경부 비산배출시설 운영기록부(PDF, ZIP)를 업로드하면, AI가 법적 준수율을 분석하고 종합 보고서를 생성합니다.")
+
+# 사이드바 설정 (관리자 모드 등)
 with st.sidebar:
-    st.header("진단 기본 설정")
-    company_name = st.text_input("진단 사업장명", value="주식회사 켐베")
-    addr = st.text_input("사업장 소재지", value="충청남도 논산시")
-    industry_type = st.selectbox("업종 분류", ["I업종", "II업종", "III업종", "IV업종", "기타"], index=2)
-    permit_no = st.text_input("허가·신고 번호", value="")
+    st.header("⚙️ 진단 기본 설정")
+    company_name = st.text_input("진단 사업장명", value="테스트 화학")
+    addr = st.text_input("사업장 소재지 (시/군/구까지)", value="전북 전주")
+    industry_type = st.selectbox("업종 분류", ["I업종", "II업종", "III업종", "IV업종", "기타"])
+    permit_no = st.text_input("허가·신고 번호", value="제 2026-01 호")
     
     st.markdown("---")
     st.markdown("### 🔒 관리자 모드")
@@ -275,15 +282,16 @@ with st.sidebar:
         uploaded_kb = st.file_uploader("지식베이스용 ZIP 업로드", type=["zip"])
         if st.button("지식베이스 구축 (업데이트)", type="primary"):
             if uploaded_kb:
-                with st.spinner("벡터 데이터베이스를 구축 중입니다..."):
+                with st.spinner("벡터 데이터베이스를 구축 중입니다... (1~2분 소요)"):
                     if build_vector_db(uploaded_kb):
                         st.success("지식베이스가 성공적으로 업데이트되었습니다!")
             else:
-                st.warning("ZIP 파일을 업로드해 주세요.")
+                st.warning("먼저 ZIP 파일을 업로드해 주세요.")
                 
         st.markdown("#### 💾 지식베이스 백업")
         if os.path.exists(FAISS_DB_DIR):
             try:
+                # 임시 zip 파일 생성 후 다운로드 제공
                 import shutil
                 shutil.make_archive("faiss_backup", 'zip', FAISS_DB_DIR)
                 with open("faiss_backup.zip", "rb") as f:
@@ -291,45 +299,46 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"백업 생성 실패: {e}")
         else:
-            st.info("구축된 지식베이스가 없습니다.")
+            st.info("현재 구축된 지식베이스가 없습니다.")
 
-# 메인 화면 파일 업로드
-uploaded_files = st.file_uploader("비산배출시설 운영기록부 업로드 (PDF 또는 ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
+# 메인 화면 (파일 업로드 및 진단 실행)
+uploaded_logs = st.file_uploader("비산배출시설 운영기록부 업로드 (PDF 또는 ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
 
-if uploaded_files:
-    pdf_list = extract_pdfs_from_source(uploaded_files)
+if uploaded_logs:
+    pdf_list = extract_pdfs_from_source(uploaded_logs)
     if pdf_list:
         st.success(f"✓ 총 {len(pdf_list)}개 진단 파일 등록 완료")
         
         if st.button("🚀 정밀 진단 시작", type="primary"):
-            with st.spinner("PDF 문서 정밀 스캔 중..."):
-                measure_images = convert_and_mask_images(pdf_list)
+            with st.spinner("AI 엔진 초기화 및 이미지 변환 중..."):
+                images = convert_and_mask_images(pdf_list)
             
-            if not measure_images:
-                st.error("변환된 이미지가 없습니다.")
+            if not images:
+                st.error("처리 가능한 PDF 페이지가 없습니다.")
                 st.stop()
                 
             vector_db = load_vector_db()
+            if vector_db is None:
+                st.warning("⚠️ 구축된 지식베이스가 없어 기본 모델 지식으로만 진단을 수행합니다.")
             
-            with st.spinner("AI 엔진이 운영기록부를 정밀 분석 중입니다..."):
-                ai_result = analyze_log_compliance(measure_images, industry_type, vector_db)
-                
-            with st.spinner("대기환경 전문가 제언 작성 중..."):
+            with st.spinner("AI가 방지시설, LDAR, 냉각탑 등 운영기록을 분석하고 있습니다... (약 1분 소요)"):
+                diag_result = analyze_log_compliance(images, industry_type, vector_db)
+            
+            with st.spinner("대기환경 전문가의 실시간 대기질 연계 가이드를 생성 중입니다..."):
+                air_data = {"pm10Value": "11", "o3Value": "0.027"} # 샘플 데이터
                 station_name = get_env_office(addr)
-                # 샘플 대기질 데이터 연동
-                air_data = {"pm10Value": "11", "o3Value": "0.027"}
-                air_advice = generate_advanced_air_advice(station_name, air_data.get("pm10Value"), air_data.get("o3Value"))
-                
-            st.success("AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
+                expert_advice = generate_advanced_air_advice(station_name, air_data.get("pm10Value"), air_data.get("o3Value"))
             
+            st.success("✅ AI 정밀 진단 및 보고서 생성이 성공적으로 완료되었습니다!")
+            
+            # PDF 생성 및 다운로드 버튼 제공
             user_info = {
                 "name": company_name,
                 "addr": addr,
                 "industry": industry_type,
                 "permit_no": permit_no
             }
-            
-            pdf_bytes = create_gov_report_pdf(ai_result, user_info, air_advice, air_data, station_name)
+            pdf_bytes = create_gov_report_pdf(diag_result, user_info, expert_advice, air_data, station_name)
             
             today_str = datetime.now().strftime("%Y%m%d")
             file_name = f"비산배출_정밀진단보고서_{company_name}_{today_str}.pdf"
@@ -344,6 +353,5 @@ if uploaded_files:
             )
             
             with st.expander("🛠️ AI 엔진 Raw Data (디버깅용)"):
-                st.json(ai_result)
+                st.json(diag_result)
     else:
-        st.error("유효한 PDF 파일을 찾을 수 없습니다.")
