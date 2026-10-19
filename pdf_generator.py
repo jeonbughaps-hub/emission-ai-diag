@@ -299,6 +299,24 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 8, txt, 0, 1, "L")
         self.ln(1)
 
+    # 💡 [업데이트] 셀 너비에 맞춰 폰트 크기를 자동 계산하는 함수
+    def _get_optimal_font_size(self, text, max_width, default_size, min_size=6.0):
+        size = default_size
+        text = _safe_text(text)
+        words = text.replace('\n', ' ').split()
+        if not words:
+            return size
+            
+        self.set_font(self._fn(), "", size)
+        longest_word = max(words, key=lambda w: self.get_string_width(w))
+        
+        while self.get_string_width(longest_word) > max_width and size > min_size:
+            size -= 0.5
+            self.set_font(self._fn(), "", size)
+            
+        self.set_font(self._fn(), "", default_size)
+        return size
+
     def _wrap_text(self, text, max_width, font_size):
         self.set_font(self._fn(), "", font_size)
         text = _safe_text(text)
@@ -361,9 +379,13 @@ class ProfessionalPDF(FPDF):
         for row_idx, row in enumerate(rows):
             values = list(row[:len(headers)])
             values.extend(["-"] * (len(headers) - len(values)))
+            
+            # 💡 [업데이트] 셀 너비 초과 시 개별 폰트 자동 축소 적용
+            cell_font_sizes = [self._get_optimal_font_size(val, w - 2 * pad_x, font_size) for val, w in zip(values, col_widths)]
+            
             wrapped = [
-                self._wrap_text(value, width - 2 * pad_x, font_size)
-                for value, width in zip(values, col_widths)
+                self._wrap_text(value, width - 2 * pad_x, c_font)
+                for value, width, c_font in zip(values, col_widths, cell_font_sizes)
             ]
             row_h = max(10, max(len(lines) for lines in wrapped) * line_h + 2 * pad_y)
 
@@ -372,12 +394,12 @@ class ProfessionalPDF(FPDF):
                 draw_header()
 
             y, x = self.get_y(), x0
-            for idx, (width, lines) in enumerate(zip(col_widths, wrapped)):
+            for idx, (width, lines, c_font) in enumerate(zip(col_widths, wrapped, cell_font_sizes)):
                 fill = BRAND_LIGHT_BG if row_idx % 2 else COLOR_WHITE
                 self.set_fill_color(*fill)
                 self.set_draw_color(*COLOR_BORDER)
                 self.rect(x, y, width, row_h, "DF")
-                self.set_font(fn, "", font_size)
+                self.set_font(fn, "", c_font)
                 self.set_text_color(*COLOR_TEXT)
                 self.set_xy(x + pad_x, y + pad_y)
                 header_name = str(headers[idx])
@@ -639,7 +661,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [18, 32, 60, 25, 25, 30])
+    # 💡 폰트 확대에 맞춰 측정일이 꺾이지 않도록 컬럼 너비 분배
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [18, 32, 60, 30, 20, 30])
 
     # 💡 5열로 분리된 냉각탑 및 열교환기 팩트 데이터 표 생성
     cooling_rows = [
