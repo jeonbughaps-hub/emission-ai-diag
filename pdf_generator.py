@@ -289,31 +289,47 @@ class ProfessionalPDF(FPDF):
         self.cell(0, 8, txt, 0, 1, "L")
         self.ln(1)
 
+    # 💡 [업데이트] 단어(공백) 단위 줄바꿈 로직: "107.7ppm" 등이 중간에 잘리지 않도록 보호
     def _wrap_text(self, text, max_width, font_size):
         self.set_font(self._fn(), "", font_size)
         text = _safe_text(text)
         result = []
         for paragraph in text.split("\n"):
-            if paragraph == "":
+            if not paragraph.strip():
                 result.append("")
                 continue
-            current = ""
-            for char in paragraph:
-                candidate = current + char
-                if current and self.get_string_width(candidate) > max_width:
-                    result.append(current)
-                    current = char
+            
+            words = paragraph.split(' ')
+            current_line = ""
+            
+            for word in words:
+                if self.get_string_width(current_line + word + " ") > max_width:
+                    if current_line:
+                        result.append(current_line.strip())
+                        current_line = word + " "
+                    else:
+                        current_char_line = ""
+                        for char in word:
+                            if self.get_string_width(current_char_line + char) > max_width:
+                                result.append(current_char_line)
+                                current_char_line = char
+                            else:
+                                current_char_line += char
+                        current_line = current_char_line + " "
                 else:
-                    current = candidate
-            result.append(current or " ")
-        return result or ["-"]
+                    current_line += word + " "
+            
+            if current_line.strip():
+                result.append(current_line.strip())
+                
+        return result if result else ["-"]
 
     def draw_zebra_table(self, headers, rows, col_widths):
         fn = self._fn()
         if not headers or not col_widths: return
         table_width = sum(col_widths)
         x0 = LEFT
-        base_font_size = 9.5  # 💡 글씨를 기본적으로 약간 작게 설정하여 여유 공간 확보
+        base_font_size = 9.0  # 💡 깔끔한 표 출력을 위해 기본 폰트 사이즈 하향 조정
         line_h = 5.0
         pad_x, pad_y = 2.0, 2.5
         bottom_limit = BODY_BOTTOM
@@ -321,14 +337,14 @@ class ProfessionalPDF(FPDF):
         def draw_header():
             y = self.get_y()
             x = x0
-            self.set_font(fn, "B", 10.5)
+            self.set_font(fn, "B", 10.0)
             self.set_text_color(*BRAND_NAVY)
             self.set_fill_color(*BRAND_HEADER_BG)
             self.set_draw_color(185, 201, 220)
             heights = []
             wrapped_headers = []
             for title, width in zip(headers, col_widths):
-                lines = self._wrap_text(title, width - 2 * pad_x, 10.5)
+                lines = self._wrap_text(title, width - 2 * pad_x, 10.0)
                 wrapped_headers.append(lines)
                 heights.append(max(10, len(lines) * line_h + 4))
             header_h = max(heights)
@@ -352,20 +368,28 @@ class ProfessionalPDF(FPDF):
             values = list(row[:len(headers)])
             values.extend(["-"] * (len(headers) - len(values)))
             
-            # 💡 [핵심] 셀 너비에 맞춰 폰트 크기를 동적으로 조절하여 튀어나오지 않게 맞춤
             cell_fonts = []
             wrapped_cells = []
             
+            # 💡 [업데이트] 표 너비에 텍스트가 넘치면 스마트하게 폰트를 지속 축소하는 로직
             for val, w in zip(values, col_widths):
                 c_font = base_font_size
-                self.set_font(fn, "", c_font)
-                while True:
+                tokens = str(val).replace('\n', ' ').split()
+                
+                while c_font > 6.0:
+                    self.set_font(fn, "", c_font)
+                    # 긴 단어가 셀 너비를 초과하면 폰트 축소
+                    if any(self.get_string_width(tok) > w - 2 * pad_x for tok in tokens):
+                        c_font -= 0.5
+                        continue
+                    
                     wrapped = self._wrap_text(val, w - 2 * pad_x, c_font)
-                    if len(wrapped) <= 3 or c_font <= 7.0: # 최대 3줄 안에 들어가도록 폰트를 7.0까지 점진 축소
+                    if len(wrapped) <= 3:
                         break
                     c_font -= 0.5
+                
                 cell_fonts.append(c_font)
-                wrapped_cells.append(wrapped)
+                wrapped_cells.append(self._wrap_text(val, w - 2 * pad_x, c_font))
             
             row_h = max(10, max(len(lines) for lines in wrapped_cells) * line_h + 2 * pad_y)
 
@@ -638,8 +662,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 [업데이트] 표 너비 최적화: 결과(55)와 기준(45) 칼럼의 공간을 대폭 확보하여 글씨 축소를 줄임 (총합 190)
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 23, 35, 55, 45, 18])
+    # 💡 [업데이트] 표 너비 최적화: 총합 190을 유지하며 긴 텍스트 공간 확보
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [12, 22, 42, 52, 44, 18])
 
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
@@ -650,7 +674,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     next_idx = 2
     if cooling_rows:
         pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
-        # 💡 [업데이트] 열교환기 표 너비 최적화 (총합 190)
         pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [25, 40, 50, 50, 25])
         next_idx += 1
 
