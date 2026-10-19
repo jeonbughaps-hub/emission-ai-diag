@@ -17,6 +17,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
+import ai_engine
 import pdf_generator
 
 import warnings
@@ -94,167 +95,6 @@ h1, h2, h3 { color: var(--navy); letter-spacing: -.035em; font-weight: 800 !impo
 </style>
 """, unsafe_allow_html=True)
 
-
-# =====================================================================
-# 2. 백엔드 AI 기능 (ai_engine.py 기능 내장)
-# =====================================================================
-def get_api_key():
-    key = os.environ.get("GOOGLE_API_KEY")
-    if not key:
-        try: key = st.secrets.get("GOOGLE_API_KEY")
-        except: return None
-    return key
-
-def build_vector_db(uploaded_kb_file):
-    api_key = get_api_key()
-    if not api_key or not uploaded_kb_file: return False
-    kb_text = ""
-    try:
-        with zipfile.ZipFile(io.BytesIO(uploaded_kb_file.read())) as z:
-            for inner_file in z.namelist():
-                if "__MACOSX" in inner_file or inner_file.split("/")[-1].startswith("."): continue
-                if inner_file.lower().endswith(".pdf"):
-                    doc = fitz.open(stream=z.read(inner_file), filetype="pdf")
-                    for page in doc: kb_text += page.get_text("text") + "\n"
-                    doc.close()
-    except: return False
-
-    if not kb_text.strip(): return False
-    try:
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = text_splitter.split_text(kb_text)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
-        vector_db = FAISS.from_texts(chunks, embeddings)
-        vector_db.save_local(FAISS_DB_DIR)
-        return True
-    except: return False
-
-def load_vector_db():
-    api_key = get_api_key()
-    if not api_key or not os.path.exists(FAISS_DB_DIR): return None
-    try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001", google_api_key=api_key)
-        return FAISS.load_local(FAISS_DB_DIR, embeddings, allow_dangerous_deserialization=True)
-    except: return None
-
-def extract_pdfs_from_source(uploaded_files):
-    pdf_list = []
-    if not isinstance(uploaded_files, list): uploaded_files = [uploaded_files]
-    for uf in uploaded_files:
-        fname = uf.name.lower()
-        if fname.endswith(".pdf"): pdf_list.append((uf.name, uf))
-        elif fname.endswith(".zip"):
-            try:
-                with zipfile.ZipFile(io.BytesIO(uf.read())) as z:
-                    for inner in z.namelist():
-                        if "__MACOSX" in inner or inner.split("/")[-1].startswith("."): continue
-                        if inner.lower().endswith(".pdf"): pdf_list.append((inner, io.BytesIO(z.read(inner))))
-            except: pass
-    return pdf_list
-
-def convert_and_mask_images(pdf_list):
-    all_images = []
-    for _, fbytes in pdf_list:
-        try:
-            fbytes.seek(0)
-            doc = fitz.open(stream=fbytes.read(), filetype="pdf")
-            for page in doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                img = Image.open(io.BytesIO(pix.tobytes("jpeg", 80))).convert('RGB')
-                all_images.append(img)
-            doc.close()
-        except: continue
-    return all_images
-
-def analyze_log_compliance(measure_images, user_industry: str, vector_db):
-    api_key = get_api_key()
-    if not api_key: return {"parsed": {}, "raw": "API 키 오류"}
-            
-    client = genai.Client(api_key=api_key)
-    
-    industry_str = str(user_industry).upper()
-    if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
-        limit_text = "100ppm 미만 또는 저감효율 80% 이상"
-        ppm_limit = "100"
-        eff_limit = "80"
-    else:
-        limit_text = "50ppm 미만 또는 저감효율 90% 이상"
-        ppm_limit = "50"
-        eff_limit = "90"
-        
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-    retrieved_knowledge = ""
-    if vector_db:
-        try:
-            docs = vector_db.similarity_search(f"비산배출시설 {user_industry} 방지시설 냉각탑 열교환기 관리기준", k=4)
-            retrieved_knowledge = "\n".join([doc.page_content for doc in docs])
-        except: pass
-
-    prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 AI입니다. (시점: {current_time})
-대상 업종: {user_industry} | 적용 배출기준: {limit_text}
-
-[★ 최우선 지시사항 : 데이터 100% 전수조사 추출 ★]
-1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
-2. 방지시설 농도 (prevention): '측정일자', '시설명', '측정결과(전단/후단)' 값을 추출하세요. (THC 측정기기 정도검사 결과는 절대 제외)
-   - 🚨 날짜(date) 규정: 문서에 적힌 해당 데이터의 '실제 측정 연/월/일'을 절대 혼동하지 말고 정확히 기입하세요. (예: 24년 1월 측정값을 24년 10월로 잘못 추출하는 환각 엄격히 금지)
-   - 🚨 결과(value) 작성 규칙: 
-     > 전단과 후단이 모두 측정된 경우: "전단: OOppm, 후단: OOppm (효율 OO%)"
-     > 후단만 측정된 경우: "후단: OOppm"
-   - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 문서상 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)을 '적합'으로 처리하세요.
-3. LDAR 누출 점검 (ldar): 2022년, 2023년, 2024년, 2025년 등 존재하는 '모든 연도'의 점검 실적을 단 한 해도 빼놓지 말고 전수조사 추출하세요.
-
-[🚨 냉각탑 및 열교환기 정밀 분석 필수 - 연도별 누락 절대 금지 🚨]
-문서 내 '냉각탑(Cooling Tower)' 또는 '열교환기(Heat Exchanger)'의 연 1회 점검 기록을 반드시 찾아 `cooling` 배열에 담으세요.
-- ❗️과거 연도 데이터가 존재한다면 '절대 중간 연도를 빼먹지 말고' 모든 연도의 점검 기록을 개별 행으로 전부 추가해야 합니다.
-- 냉각탑: 냉각수 TOC 분석 50ppm 미만 여부 (초과 시 부적합)
-- 열교환기: 전·후단 냉각수 농도 편차 1ppm 미만 또는 10% 미만 유지 여부 (초과 시 부적합)
-
-[🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
-서술형 의견을 작성할 때, 문서에서 실제로 추출된 연도, 시설명, 수치만을 100% 팩트 기반으로 서술하세요. 문서에 없는 데이터를 지어내지 마십시오.
-
-[★ 지식베이스 ★]
-{retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
-
-[★ 출력 형식 (반드시 순수 JSON 객체로만 출력)]
-{{
-  "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(7)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2025", "target_count": "10", "leak_count": "0", "leak_rate": "0%", "recheck_done": "이행완료", "result": "적합"}} ] }},
-  "cooling": {{ "data": [ {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}} ]}},
-  "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
-  "priority_actions": [ {{"priority": "1", "action": "냉각탑 TOC 정기검사", "deadline": "1개월 이내", "owner": "환경안전팀"}} ],
-  "law_references": [ {{"law_name": "비산배출시설 관리기준", "article": "관련 조문", "summary": "냉각수 TOC 50ppm 미만 유지 의무", "checked_date": "2026-10-18"}} ],
-  "followup_actions": [ {{"action": "열교환기 편차 점검", "owner": "관리자", "deadline": "분기 내", "status": "대기"}} ],
-  "overall_opinion": "반드시 추출된 실제 데이터만을 기반으로 작성. 절대 가상의 과거 이력을 지어내지 말 것."
-}}
-"""
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[prompt] + measure_images,
-            config=types.GenerateContentConfig(temperature=0.0, response_mime_type="application/json")
-        )
-        raw_text = response.text.strip()
-        try: parsed_data = json.loads(raw_text, strict=False)
-        except:
-            if "```json" in raw_text: raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw_text: raw_text = raw_text.split("```")[1].split("```")[0].strip()
-            parsed_data = json.loads(raw_text, strict=False)
-        return {"parsed": parsed_data, "raw": raw_text}
-    except Exception as e: return {"parsed": {}, "raw": f"에러 발생: {e}"}
-
-def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
-    api_key = get_api_key()
-    if not api_key: return "대기질 API 키 설정 오류."
-    client = genai.Client(api_key=api_key)
-    prompt = f"관할 측정소({station_name})의 대기질(PM10: {pm10_val} ㎍/m³, O3: {o3_val} ppm)을 고려하여 비산배출원(VOCs) 환경 관리 지침을 작성하세요. 3가지 소제목을 포함하여 800자로 작성하세요."
-    try:
-        res = client.models.generate_content(model='gemini-2.5-flash', contents=[prompt], config=types.GenerateContentConfig(temperature=0.4))
-        return res.text.strip()
-    except: return "AI 제언 생성을 생략합니다."
-
-
 # =====================================================================
 # 3. 사이드바 UI (사업장 입력 & 지능형 측정소 자동 매핑)
 # =====================================================================
@@ -279,6 +119,7 @@ with st.sidebar:
     st.markdown("### 📋 기본 정보 입력")
     user_industry = st.selectbox("업종 분류", ["III업종", "I업종", "II업종", "IV업종", "V업종"])
     company_name = st.text_input("사업장명", value="로테")
+    permit_no = st.text_input("허가·신고 번호", value="")
 
     col_region, col_district = st.columns(2)
     with col_region: region = st.selectbox("지역", ["충청", "대전", "세종", "전라", "광주"], index=3)
@@ -308,7 +149,7 @@ with st.sidebar:
     if admin_password == "1234":
         uploaded_kb = st.file_uploader("지식베이스용 ZIP 업로드", type=["zip"])
         if st.button("지식베이스 구축 (업데이트)", use_container_width=True):
-            if uploaded_kb and build_vector_db(uploaded_kb):
+            if uploaded_kb and ai_engine.build_vector_db(uploaded_kb):
                 st.success("✅ 성공적으로 학습되었습니다!")
                 time.sleep(1)
                 st.rerun()
@@ -351,15 +192,15 @@ if diagnose_btn:
         st.warning("⚠️ 진단할 운영기록부(PDF/ZIP)를 먼저 업로드해주세요.")
     else:
         my_bar = st.progress(0.1, text="PDF 문서 정밀 스캔 중...")
-        pdf_list = extract_pdfs_from_source(uploaded_logs)
-        measure_images = convert_and_mask_images(pdf_list)
+        pdf_list = ai_engine.extract_pdfs_from_source(uploaded_logs)
+        measure_images = ai_engine.convert_and_mask_images(pdf_list)
         
         my_bar.progress(0.4, text="AI 전수조사 데이터 정밀 추출 중...")
-        vector_db = load_vector_db()
-        diagnosis_result = analyze_log_compliance(measure_images, user_industry, vector_db)
+        vector_db = ai_engine.load_vector_db()
+        diagnosis_result = ai_engine.analyze_log_compliance(measure_images, user_industry, vector_db)
 
         my_bar.progress(0.8, text="전문가 제언 작성 중...")
-        advice = generate_advanced_air_advice(station_name, "11", "0.027")
+        advice = ai_engine.generate_advanced_air_advice(station_name, "11", "0.027")
 
         my_bar.progress(1.0, text="완료!")
         time.sleep(0.5)
