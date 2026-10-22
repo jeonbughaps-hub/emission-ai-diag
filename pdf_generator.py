@@ -28,7 +28,7 @@ try:
     if U_HBG: BRAND_HEADER_BG = U_HBG
 except ImportError:
     def get_env_office(addr):
-        return "삼일동"
+        return "오창읍"
     def get_limit_ppm(ind):
         return "100ppm" if any(x in str(ind).upper() for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]) else "50ppm"
 
@@ -370,7 +370,6 @@ class ProfessionalPDF(FPDF):
             cell_fonts = []
             wrapped_cells = []
             
-            # 💡 [업데이트] 날짜 및 구분 텍스트가 줄바꿈 되지 않도록 폰트를 5.0까지 과감하게 축소 허용
             for val, w in zip(values, col_widths):
                 c_font = base_font_size
                 tokens = str(val).replace('\n', ' ').split()
@@ -660,7 +659,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 [업데이트] 표 너비 최적화: 구분과 측정일 공간을 약간 더 넓혀 날짜가 한 줄에 나오도록 재조정 (총합 190)
     pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 25, 38, 52, 43, 18])
 
     cooling_rows = [
