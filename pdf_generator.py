@@ -28,7 +28,7 @@ try:
     if U_HBG: BRAND_HEADER_BG = U_HBG
 except ImportError:
     def get_env_office(addr):
-        return "삼일동"
+        return "오창읍"
     def get_limit_ppm(ind):
         return "100ppm" if any(x in str(ind).upper() for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]) else "50ppm"
 
@@ -374,7 +374,6 @@ class ProfessionalPDF(FPDF):
                 c_font = base_font_size
                 val_str = str(val)
                 
-                # 💡 [업데이트] 측정일, 구분, 연도 등은 텍스트 내부의 공백과 줄바꿈을 완벽히 제거하여 무조건 한 줄 유지
                 if any(keyword in str(headers[idx]) for keyword in ["측정일", "구분", "점검 연도"]):
                     val_str = val_str.replace('\n', '').replace(' ', '').strip()
                     
@@ -665,7 +664,6 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    # 💡 [업데이트] 날짜 텍스트 공간 확보를 위해 너비 재조정 (13, 27) 총합 190
     pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [13, 27, 39, 50, 43, 18])
 
     cooling_rows = [
