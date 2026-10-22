@@ -28,7 +28,7 @@ try:
     if U_HBG: BRAND_HEADER_BG = U_HBG
 except ImportError:
     def get_env_office(addr):
-        return "오창읍"
+        return "삼일동"
     def get_limit_ppm(ind):
         return "100ppm" if any(x in str(ind).upper() for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]) else "50ppm"
 
@@ -370,9 +370,15 @@ class ProfessionalPDF(FPDF):
             cell_fonts = []
             wrapped_cells = []
             
-            for val, w in zip(values, col_widths):
+            for idx, (val, w) in enumerate(zip(values, col_widths)):
                 c_font = base_font_size
-                tokens = str(val).replace('\n', ' ').split()
+                val_str = str(val)
+                
+                # 💡 [업데이트] 측정일, 구분, 연도 등은 텍스트 내부의 공백과 줄바꿈을 완벽히 제거하여 무조건 한 줄 유지
+                if any(keyword in str(headers[idx]) for keyword in ["측정일", "구분", "점검 연도"]):
+                    val_str = val_str.replace('\n', '').replace(' ', '').strip()
+                    
+                tokens = val_str.replace('\n', ' ').split()
                 
                 while c_font > 5.0:
                     self.set_font(fn, "", c_font)
@@ -380,13 +386,13 @@ class ProfessionalPDF(FPDF):
                         c_font -= 0.5
                         continue
                     
-                    wrapped = self._wrap_text(val, w - 2 * pad_x, c_font)
+                    wrapped = self._wrap_text(val_str, w - 2 * pad_x, c_font)
                     if len(wrapped) <= 3:
                         break
                     c_font -= 0.5
                 
                 cell_fonts.append(c_font)
-                wrapped_cells.append(self._wrap_text(val, w - 2 * pad_x, c_font))
+                wrapped_cells.append(self._wrap_text(val_str, w - 2 * pad_x, c_font))
             
             row_h = max(10, max(len(lines) for lines in wrapped_cells) * line_h + 2 * pad_y)
 
@@ -659,7 +665,8 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
          _record_value(p, "value"), _record_value(p, "limit"), _record_value(p, "result")]
         for p in _get_rows(data, "prevention")
     ]
-    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [14, 25, 38, 52, 43, 18])
+    # 💡 [업데이트] 날짜 텍스트 공간 확보를 위해 너비 재조정 (13, 27) 총합 190
+    pdf.draw_zebra_table(["구분", "측정일", "방지시설명", "결과", "기준", "판정"], prev_rows, [13, 27, 39, 50, 43, 18])
 
     cooling_rows = [
         [_record_value(p, "date"), _record_value(p, "facility"),
@@ -670,7 +677,7 @@ def create_gov_report_pdf(ai_data: dict, user_info: dict, air_advice: str, air_d
     next_idx = 2
     if cooling_rows:
         pdf.draw_sub_header(f"{next_idx}) 냉각탑 및 열교환기 냉각수 TOC 농도 추이")
-        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [25, 40, 50, 50, 25])
+        pdf.draw_zebra_table(["측정일", "시설명", "결과", "기준", "판정"], cooling_rows, [27, 38, 50, 50, 25])
         next_idx += 1
 
     pdf.draw_sub_header(f"{next_idx}) 비산누출시설 LDAR 점검 실적")
