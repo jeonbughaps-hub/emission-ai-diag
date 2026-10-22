@@ -154,16 +154,17 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 [★ 최우선 지시사항 : 데이터 100% 전수조사 추출 ★]
 1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
 2. 방지시설 농도 (prevention): 문서에 기록된 '실제 측정일자', '시설명', '측정결과(전단/후단)' 값을 추출하세요. (THC 측정기기 정도검사 결과는 절대 제외)
+   - 🚨 시설명 텍스트 정제: PDF 인식 오류로 글자가 깨진 경우(예: RT ), 100100 등) 문맥에 맞게 깔끔한 이름(예: 직접연소에의한시설(RTO))으로 정제하여 출력하세요.
    - 🚨 날짜(date) 추출 경고: 문서에 적힌 해당 데이터의 '실제 측정 연도와 월'을 절대 혼동하지 마세요.
    - 🚨 결과(value) 작성 규칙 (반드시 아래 양식 준수):
      > 전단과 후단이 모두 측정된 경우: "전단: OOppm, 후단: OOppm (효율 OO%)"
      > 후단만 측정된 경우: "후단: OOppm" (※ 후단만 있는 경우 효율을 임의로 계산하거나 적지 마세요)
    - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 문서상 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)은 반드시 '적합'으로 처리하세요.
 
-3. LDAR 누출 점검 (ldar): 문서에 '실제로 기록되어 있는 연도'의 점검 실적만 추출하세요. 
-   - 🚨 환각 엄격 금지: 문서에 없는 연도는 절대 지어내지 마세요.
-   - 🚨 데이터 누락 방지 (매우 중요): 종합 의견(overall_opinion)에 2023년, 2024년 등 누출 및 조치 내역을 서술할 것이라면, **반드시 그 내용을 `ldar` 배열에도 동일하게 객체로 생성**해야 합니다. 종합 의견에는 적어놓고 정작 표(배열)에는 데이터를 누락하여 '자료 없음'이 뜨게 만드는 실수를 절대 하지 마세요.
-   - 문서에 '점검 대상 개소'나 '누출률' 정보가 부족하더라도 "-" 또는 "기록없음"으로 채워서라도 JSON 구조를 무조건 완성하세요. (예: {{"year": "2023", "target_count": "-", "leak_count": "3", "leak_rate": "-", "recheck_done": "수리 조치 완료", "result": "적합"}})
+3. LDAR 누출 점검 (ldar): 문서에 '실제로 기록되어 있는 연도별' 점검 실적을 추출하세요. 
+   - 🚨 연도별 데이터 합산(Aggregation) 절대 필수 🚨: 동일한 연도에 여러 공정이나 시설의 점검 기록이 여러 줄로 나뉘어 있다면, **반드시 해당 연도의 '대상 개소(target_count)'와 '누출 수(leak_count)'를 모두 더하여 연도별로 딱 1개의 객체(행)만** 생성하세요. 
+   (예: 2023년에 4개 공정 기록이 93, 177, 55, 58개라면 -> 2023년 대상 개소는 "383"으로 요약)
+   - 문서에 2022년 점검 기록이 없으면 절대 임의로 지어내지 마세요.
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 - 환각 엄격 금지 🚨]
 - ❗️문서에 냉각탑이나 열교환기 관련 점검 기록이 **실제로 존재하는 경우에만** 추출하여 `cooling` 배열에 담으세요.
@@ -180,8 +181,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 반드시 마크다운 없이 순수 JSON 객체로만 출력하세요. 속성명과 구조를 절대 바꾸지 마세요.
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(7)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2024", "target_count": "-", "leak_count": "3", "leak_rate": "-", "recheck_done": "수리완료", "result": "적합"}} ] }},
+  "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(RTO)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "0%", "recheck_done": "누출 없음", "result": "적합"}} ] }},
   "cooling": {{ "data": [
     {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
   ]}},
