@@ -125,7 +125,6 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         st.error("API 키를 찾을 수 없습니다. Secrets 설정을 확인하세요.")
         return {"parsed": {}, "raw": "API 키 오류"}
             
-    # 💡 클라이언트 생성 (기본 설정 유지)
     client = genai.Client(api_key=api_key)
     
     industry_str = str(user_industry).upper()
@@ -149,6 +148,103 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         except:
             retrieved_knowledge = ""
 
+    # 💡 JSON 파싱 오류를 원천 차단하기 위해 스키마 정의를 추가
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "scores": {
+                "type": "object",
+                "properties": {
+                    "manager_score": {"type": "object", "properties": {"score": {"type": "integer"}, "grade": {"type": "string"}}},
+                    "prevention_score": {"type": "object", "properties": {"score": {"type": "integer"}, "grade": {"type": "string"}}},
+                    "ldar_score": {"type": "object", "properties": {"score": {"type": "integer"}, "grade": {"type": "string"}}},
+                    "record_score": {"type": "object", "properties": {"score": {"type": "integer"}, "grade": {"type": "string"}}},
+                    "overall_score": {"type": "object", "properties": {"score": {"type": "integer"}, "grade": {"type": "string"}}}
+                }
+            },
+            "prevention": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "period": {"type": "string"},
+                                "date": {"type": "string"},
+                                "facility": {"type": "string"},
+                                "value": {"type": "string"},
+                                "limit": {"type": "string"},
+                                "result": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            },
+            "ldar": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "year": {"type": "string"},
+                                "target_count": {"type": "string"},
+                                "leak_count": {"type": "string"},
+                                "leak_rate": {"type": "string"},
+                                "recheck_done": {"type": "string"},
+                                "result": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            },
+            "cooling": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "date": {"type": "string"},
+                                "facility": {"type": "string"},
+                                "value": {"type": "string"},
+                                "limit": {"type": "string"},
+                                "result": {"type": "string"}
+                            }
+                        }
+                    }
+                }
+            },
+            "risk_matrix": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "item": {"type": "string"},
+                        "probability": {"type": "string"},
+                        "impact": {"type": "string"},
+                        "priority": {"type": "string"}
+                    }
+                }
+            },
+            "improvement_roadmap": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "phase": {"type": "string"},
+                        "action": {"type": "string"},
+                        "expected_effect": {"type": "string"}
+                    }
+                }
+            },
+            "overall_opinion": {"type": "string"}
+        }
+    }
+
     prompt = f"""당신은 환경부 비산배출시설 기술진단 전문 AI입니다. (시점: {current_time})
 대상 업종: {user_industry} | 적용 배출기준: {limit_text}
 
@@ -156,67 +252,41 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 1. 첨부된 모든 문서/이미지를 스캔하여 아래 데이터를 찾아 배열에 담으세요.
 
 2. 방지시설 농도 (prevention): 문서에 기록된 '실제 측정일자', '시설명', '측정결과(전단/후단)' 값을 추출하세요.
-   - 🚨 시설명 텍스트 정제: PDF 인식 오류로 글자가 깨진 경우(예: RT ), 100100 등) 문맥에 맞게 깔끔한 이름(예: 직접연소에의한시설(RTO))으로 정제하여 출력하세요.
+   - 🚨 시설명 텍스트 정제: PDF 인식 오류로 글자가 깨진 경우 문맥에 맞게 깔끔한 이름으로 정제하세요.
    - 🚨 날짜(date) 추출 경고: 해당 데이터의 '실제 측정 연도와 월'을 혼동하지 마세요.
    - 🚨 결과(value) 양식: 전·후단 측정 시 "전단: OOppm, 후단: OOppm (효율 OO%)", 후단만 측정 시 "후단: OOppm"
    - 🚨 저감효율 예외 판정: 측정값이 {ppm_limit}ppm을 초과하더라도, 문서상 '저감효율'이 {eff_limit}% 이상인 경우 최종 판정(result)은 반드시 '적합'으로 처리하세요.
 
 3. LDAR 누출 점검 (ldar): 문서에 '실제로 기록되어 있는 연도별' 점검 실적을 추출하세요. 
    - 🚨 연도 환각 엄격 금지: 업로드된 문서에 존재하는 연도(예: 23~25년)의 데이터만 추출하세요. 문서에 없는 과거 연도(예: 2022년 등)는 절대 임의로 지어내어 생성하지 마십시오.
-   - 🚨 연도별 데이터 합산(Aggregation) 필수: 동일 연도에 여러 공정/시설의 점검 기록이 여러 줄로 나뉘어 있다면, **반드시 해당 연도의 '대상 개소(target_count)'와 '누출 수(leak_count)'를 모두 더하여 연도별로 딱 1개의 객체(행)만** 생성하세요. 
+   - 🚨 연도별 데이터 합산(Aggregation) 필수: 동일 연도에 여러 공정/시설의 점검 기록이 여러 줄로 나뉘어 있다면, 반드시 해당 연도의 '대상 개소(target_count)'와 '누출 수(leak_count)'를 모두 더하여 연도별로 딱 1개의 객체(행)만 생성하세요.
    - 🚨 비산누출시설 판정(result) 핵심 규칙 🚨:
      > 누출 수(leak_count)가 0건이면 "누출 없음"으로 기록하고 무조건 "적합" 판정하세요. 절대 누출이 발생했다고 지어내지 마세요.
-     > 누출 수(leak_count)가 1건 이상 발생했더라도, **'누출발생 시점으로 30일 이내 재조치 완료 후 운영기록부 기록'** 내용이 확인되면 최종 판정은 반드시 "적합"으로 처리하세요. 30일을 초과하거나 미조치된 경우에만 "부적합"을 부여하세요.
-     > 재측정·조치(recheck_done) 항목에는 "누출 없음" 또는 "30일 이내 재조치 완료" 등으로 팩트에 기반하여 기입하세요.
+     > 누출 수(leak_count)가 1건 이상 발생했더라도, '누출발생 시점으로 30일 이내 재조치 완료 후 운영기록부 기록' 내용이 확인되면 최종 판정은 반드시 "적합"으로 처리하세요.
 
 [🚨 냉각탑 및 열교환기 정밀 분석 필수 - 환각 엄격 금지 🚨]
-- ❗️문서에 냉각탑이나 열교환기 관련 점검 기록이 **실제로 존재하는 경우에만** 추출하여 `cooling` 배열에 담으세요.
+- ❗️문서에 냉각탑이나 열교환기 관련 점검 기록이 실제로 존재하는 경우에만 추출하여 `cooling` 배열에 담으세요.
 - ❗️만약 관련 기록이 전혀 없다면, 절대 지어내지 말고 `cooling` 배열을 빈 배열(`[]`)로 비워두세요.
 
 [🚫 강력한 환각(Hallucination) 방지 지시사항 🚫]
-서술형 종합 의견(overall_opinion)을 작성할 때, 누출 수(leak_count)가 0건인데도 "누출이 발생했다"고 반대로 적거나, 문서에 없는 과거 연도(2022년 등)를 언급하는 치명적인 환각을 절대 저지르지 마세요. 추출된 데이터 수치와 종합 의견 문맥은 100% 일치해야 합니다. 문자열 안에 큰따옴표(")를 사용할 때는 반드시 백슬래시(\)로 이스케이프 처리하세요.
+서술형 종합 의견(overall_opinion)을 작성할 때, 누출 수(leak_count)가 0건인데도 "누출이 발생했다"고 반대로 적거나, 문서에 없는 과거 연도를 언급하는 치명적인 환각을 절대 저지르지 마세요.
 
 [★ 지식베이스 ★]
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
-
-[★ 출력 형식 ★]
-반드시 다음 구조의 JSON 객체로만 응답하세요. 백틱(```json)이나 다른 설명은 절대 추가하지 마세요.
-{{
-  "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
-  "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(RTO)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "0%", "recheck_done": "누출 없음", "result": "적합"}} ] }},
-  "cooling": {{ "data": [
-    {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
-  ]}},
-  "risk_matrix": [ {{"item": "시설관리", "probability": "보통", "impact": "높음", "priority": "Medium"}} ],
-  "improvement_roadmap": [ {{"phase": "단기", "action": "시설 점검 강화", "expected_effect": "효율 안정화"}} ],
-  "priority_actions": [ {{"priority": "1", "action": "냉각탑 TOC 정기검사", "deadline": "1개월 이내", "owner": "환경안전팀"}} ],
-  "law_references": [ {{"law_name": "비산배출시설 관리기준", "article": "관련 조문", "summary": "냉각수 TOC 50ppm 미만 유지 의무", "checked_date": "2026-10-18"}} ],
-  "followup_actions": [ {{"action": "열교환기 편차 점검", "owner": "관리자", "deadline": "분기 내", "status": "대기"}} ],
-  "overall_opinion": "반드시 추출된 실제 데이터만을 기반으로 작성. 절대 가상의 과거 이력을 지어내지 말 것."
-}}
 """
     try:
-        # 💡 API 버전을 바꾸는 대신 일반 텍스트 모드로 호출하고, 후처리로 JSON을 파싱하는 가장 안정적인 방식으로 변경
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
-                temperature=0.0
+                temperature=0.0,
+                response_mime_type="application/json",
+                response_schema=response_schema
             )
         )
         
         raw_text = response.text.strip()
-        
-        try:
-            parsed_data = json.loads(raw_text, strict=False)
-        except json.JSONDecodeError:
-            if "```json" in raw_text:
-                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw_text:
-                raw_text = raw_text.split("```")[1].split("```")[0].strip()
-            parsed_data = json.loads(raw_text, strict=False)
-                
+        parsed_data = json.loads(raw_text)
         return {"parsed": parsed_data, "raw": raw_text}
     
     except Exception as e:
@@ -228,7 +298,6 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류."
             
-    # 💡 여기서도 기본 설정 유지
     client = genai.Client(api_key=api_key)
     prompt = f"""
 당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
