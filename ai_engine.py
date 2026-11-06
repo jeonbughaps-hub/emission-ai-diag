@@ -125,7 +125,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         st.error("API 키를 찾을 수 없습니다. Secrets 설정을 확인하세요.")
         return {"parsed": {}, "raw": "API 키 오류"}
             
-    client = genai.Client(api_key=api_key)
+    # 💡 v1beta 버전 명시적 호출
+    client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
     
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
@@ -183,7 +184,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(RTO)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "0%", "recheck_done": "누출 없음", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "-", "recheck_done": "누출 없음", "result": "적합"}} ] }},
   "cooling": {{ "data": [
     {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
   ]}},
@@ -227,7 +228,8 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류."
             
-    client = genai.Client(api_key=api_key)
+    # 💡 v1beta 버전 명시적 호출
+    client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
     prompt = f"""
 당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
 관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
