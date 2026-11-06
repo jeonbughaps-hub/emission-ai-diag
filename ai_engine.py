@@ -125,8 +125,8 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         st.error("API 키를 찾을 수 없습니다. Secrets 설정을 확인하세요.")
         return {"parsed": {}, "raw": "API 키 오류"}
             
-    # 💡 v1beta 버전 명시적 호출
-    client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
+    # 💡 클라이언트 생성 (기본 설정 유지)
+    client = genai.Client(api_key=api_key)
     
     industry_str = str(user_industry).upper()
     if any(x in industry_str for x in ["3", "III", "Ⅲ", "4", "IV", "Ⅳ"]):
@@ -180,11 +180,11 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 {retrieved_knowledge if retrieved_knowledge else "기본 환경 지식 활용"}
 
 [★ 출력 형식 ★]
-반드시 마크다운 없이 순수 JSON 객체로만 출력하세요. 속성명과 구조를 절대 바꾸지 마세요.
+반드시 다음 구조의 JSON 객체로만 응답하세요. 백틱(```json)이나 다른 설명은 절대 추가하지 마세요.
 {{
   "scores": {{ "manager_score": {{"score":100, "grade":"A"}}, "prevention_score": {{"score":95, "grade":"A"}}, "ldar_score": {{"score":100, "grade":"A"}}, "record_score": {{"score":90, "grade":"B"}}, "overall_score": {{"score":96, "grade":"A"}} }},
   "prevention": {{ "data": [ {{"period": "반기", "date": "2024-01-11", "facility": "흡착에의한시설(RTO)", "value": "전단: 350ppm, 후단: 30.5ppm (효율 91.2%)", "limit": "{limit_text}", "result": "적합"}} ] }},
-  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "-", "recheck_done": "누출 없음", "result": "적합"}} ] }},
+  "ldar": {{ "data": [ {{"year": "2024", "target_count": "383", "leak_count": "0", "leak_rate": "0%", "recheck_done": "누출 없음", "result": "적합"}} ] }},
   "cooling": {{ "data": [
     {{"date": "2023-04-10", "facility": "냉각탑", "value": "2.6ppm", "limit": "50ppm 미만", "result": "적합"}}
   ]}},
@@ -197,12 +197,12 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
 }}
 """
     try:
+        # 💡 API 버전을 바꾸는 대신 일반 텍스트 모드로 호출하고, 후처리로 JSON을 파싱하는 가장 안정적인 방식으로 변경
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[prompt] + measure_images,
             config=types.GenerateContentConfig(
-                temperature=0.0,
-                response_mime_type="application/json"
+                temperature=0.0
             )
         )
         
@@ -220,7 +220,7 @@ def analyze_log_compliance(measure_images, user_industry: str, vector_db):
         return {"parsed": parsed_data, "raw": raw_text}
     
     except Exception as e:
-        st.error(f"1단계 데이터 추출 중 API 오류 발생: {e}")
+        st.error(f"1단계 데이터 추출 중 오류 발생: {e}")
         return {"parsed": {}, "raw": f"에러 발생: {e}"}
 
 def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
@@ -228,8 +228,8 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
     api_key = get_api_key()
     if not api_key: return "대기질 API 키 설정 오류."
             
-    # 💡 v1beta 버전 명시적 호출
-    client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
+    # 💡 여기서도 기본 설정 유지
+    client = genai.Client(api_key=api_key)
     prompt = f"""
 당신은 국립환경과학원 수준의 대기환경 전문 연구원입니다.
 관할 측정소({station_name})의 현재 실시간 대기질은 미세먼지(PM10): {pm10_val} ㎍/m³, 오존(O3): {o3_val} ppm 입니다.
@@ -248,5 +248,5 @@ def generate_advanced_air_advice(station_name: str, pm10_val: str, o3_val: str):
         )
         return response.text.strip()
     except Exception as e:
-        st.error(f"2단계 전문가 제언 중 API 오류 발생: {e}")
+        st.error(f"2단계 전문가 제언 중 오류 발생: {e}")
         return "AI 모델 통신 오류로 전문가 제언 생성을 일시 생략합니다."
